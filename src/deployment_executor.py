@@ -268,19 +268,30 @@ class DeploymentExecutor:
                 return True
 
             elif action == 'start':
+                # Construir la ruta al script catalina
                 catalina_bat = os.path.join(tomcat_home, 'bin', 'catalina.bat')
                 
-                # Usar 'start' para ejecutar en background
-                start_cmd = f'start /B cmd /c "{catalina_bat}" start'
+                # Asegurarnos de que la ruta existe
+                if not os.path.exists(catalina_bat):
+                    self.logger.error(f"No se encuentra el archivo: {catalina_bat}")
+                    return False
+
+                # Construir el comando completo
+                cmd = ['cmd', '/c', 'start', '/B', catalina_bat, 'start']
                 
-                # Crear el proceso desvinculado
-                subprocess.Popen(
-                    start_cmd,
-                    shell=True,
-                    creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    stdin=subprocess.PIPE
+                self.logger.info(f"Ejecutando comando: {' '.join(cmd)}")
+                
+                # Configurar el proceso
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+                # Ejecutar el proceso
+                process = subprocess.Popen(
+                    cmd,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    cwd=os.path.join(tomcat_home, 'bin'),
+                    env=os.environ.copy()
                 )
                 
                 # Verificar que Tomcat esté respondiendo
@@ -297,10 +308,12 @@ class DeploymentExecutor:
                     except Exception as e:
                         self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
 
+                self.logger.error("Tomcat no respondió después de 60 segundos")
                 return False
 
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
+            self.logger.exception("Stacktrace completo:")
             return False
     def _deploy_war(self, site_config, webapps_dir):
         """
