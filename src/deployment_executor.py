@@ -184,7 +184,7 @@ class DeploymentExecutor:
                 maven_env.update({
                     'JAVA_HOME': r'C:\\Program Files\\Java\\jdk-17',
                     'M2_HOME': r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8',
-                    'PATH': f"{maven_env.get('PATH', '')};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin"
+                    'PATH': f"{maven_env.get('PATH', '')};C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8\bin"
                 })
 
                 # Configurar entorno para Maven
