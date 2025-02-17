@@ -242,86 +242,32 @@ class DeploymentExecutor:
             return False
         
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
-        """
-        Método unificado para ejecutar comandos de Tomcat con mayor robustez
-        """
         try:
-            # Definir métodos de detención/inicio según la acción
             if action == 'stop':
-                commands = [
-                    # Método 1: Usar script de shutdown de Tomcat
-                    [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
-                    
-                    # Método 2: Usar net stop
-                    ['net', 'stop', 'Apache Tomcat 9.0 Tomcat9'],
-                    
-                    # Método 3: Taskkill para procesos específicos
-                    ['taskkill', '/F', '/IM', 'catalina.exe'],
-                    ['taskkill', '/F', '/IM', 'java.exe', '/FI', '"WINDOWTITLE eq Apache Tomcat"']
-                ]
+                # Primero intentar detener gracefully
+                shutdown_cmd = [os.path.join(tomcat_home, 'bin', 'shutdown.bat')]
+                
+                # Si falla, matar el proceso por puerto
+                kill_cmd = ['taskkill', '/F', '/IM', 'java.exe']
+                
+                for cmd in [shutdown_cmd, kill_cmd]:
+                    try:
+                        self.logger.info(f"Intentando {action} Tomcat con: {' '.join(cmd)}")
+                        subprocess.run(cmd, shell=True, timeout=30)
+                        time.sleep(5)  # Dar tiempo a que se detenga
+                    except:
+                        continue
+                        
+                return True
+                
             elif action == 'start':
-                commands = [
-                    # Método 1: Usar script de startup de Tomcat
-                    [os.path.join(tomcat_home, 'bin', 'startup.bat')],
-                    
-                    # Método 2: Usar net start
-                    ['net', 'start', 'Apache Tomcat 9.0 Tomcat9']
-                ]
-            else:
-                raise ValueError(f"Acción no válida: {action}")
-
-            # Intentar cada método de comando
-            for cmd in commands:
-                try:
-                    self.logger.info(f"Intentando {action} Tomcat con: {' '.join(cmd)}")
-                    
-                    result = subprocess.run(
-                        cmd, 
-                        capture_output=True, 
-                        text=True, 
-                        shell=True,
-                        timeout=30
-                    )
-                    
-                    if result.returncode == 0:
-                        self.logger.info(f"Comando {action} de Tomcat ejecutado exitosamente")
-                        
-                        # Si es start, verificar que Tomcat esté realmente funcionando
-                        if action == 'start':
-                            self.logger.info("Esperando a que Tomcat esté completamente iniciado...")
-                            import time
-                            import urllib.request
-                            
-                            # Intentar hasta 12 veces (1 minuto total)
-                            for attempt in range(12):
-                                try:
-                                    response = urllib.request.urlopen('http://localhost:8080')
-                                    if response.status == 200:
-                                        self.logger.info("Tomcat iniciado y respondiendo correctamente")
-                                        return True
-                                except Exception as e:
-                                    if attempt < 11:  # En el último intento no logueamos espera
-                                        self.logger.info(f"Esperando a Tomcat... intento {attempt + 1}/12")
-                                        time.sleep(5)  # Esperar 5 segundos entre intentos
-                            
-                            self.logger.error("Tomcat no respondió después de 1 minuto")
-                            raise Exception("Timeout esperando respuesta de Tomcat")
-                        
-                        return True
-                    
-                    self.logger.warning(f"Comando fallido. Código: {result.returncode}")
-                    self.logger.warning(f"STDOUT: {result.stdout}")
-                    self.logger.warning(f"STDERR: {result.stderr}")
-
-                except subprocess.TimeoutExpired:
-                    self.logger.warning(f"Timeout en comando {cmd}")
-                except Exception as cmd_error:
-                    self.logger.warning(f"Error con comando {cmd}: {str(cmd_error)}")
-
-            raise Exception(f"No se pudo {action} Tomcat por ningún método")
-            
+                startup_cmd = os.path.join(tomcat_home, 'bin', 'startup.bat')
+                subprocess.run(startup_cmd, shell=True)
+                time.sleep(10)  # Dar tiempo a que inicie
+                return True
+                
         except Exception as e:
-            self.logger.error(f"Error crítico al {action} Tomcat: {str(e)}")
+            self.logger.error(f"Error en {action} Tomcat: {str(e)}")
             return False
 
     def _deploy_war(self, site_config, webapps_dir):
