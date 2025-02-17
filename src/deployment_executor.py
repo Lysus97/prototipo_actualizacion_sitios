@@ -149,10 +149,8 @@ class DeploymentExecutor:
             # Nombre del proyecto - IMPORTANTE: usar el prefijo correcto
             project_name = site_config.get('upd.environment1.war.name', '')
             
-            # Loguear específicamente el nombre del proyecto
             self.logger.info(f"Nombre del proyecto extraído: '{project_name}'")
             
-            # Validar que el nombre no esté vacío
             if not project_name:
                 raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
             
@@ -160,69 +158,80 @@ class DeploymentExecutor:
             tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
             webapps_dir = os.path.join(tomcat_home, 'webapps')
             
-            # Usar SVNManager para checkout y build
+            # Usar SVNManager para checkout
             svn_manager = SVNManager(logger=self.logger)
             
-            # Método para encontrar el WAR generado
-            def find_war(base_path):
-                for root, dirs, files in os.walk(base_path):
-                    for file in files:
-                        if file.endswith('.war'):
-                            return os.path.join(root, file)
-                raise FileNotFoundError(f"No se encontró WAR para {project_name}")
-            
             try:
-                # Checkout y construcción del proyecto
+                # 1. Hacer checkout del proyecto
                 project_path = svn_manager.checkout_project(project_name)
+                self.logger.info(f"Checkout completado en: {project_path}")
                 
-                # Compilar proyecto
+                # 2. Verificar pom.xml
+                pom_path = os.path.join(project_path, 'pom.xml')
+                if not os.path.exists(pom_path):
+                    raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
+                
+                # 3. Ejecutar Maven con todas las variables de entorno necesarias
+                maven_env = dict(os.environ)
+                maven_env.update({
+                    'JAVA_HOME': r'C:\Program Files\Java\jdk-17',
+                    'M2_HOME': r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8',
+                    'PATH': f"{maven_env.get('PATH', '')};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin"
+                })
+                
+                self.logger.info("Iniciando build con Maven...")
                 build_result = subprocess.run(
-                    ['mvn', 'clean', 'package', '-DskipTests=true'], 
-                    cwd=project_path, 
-                    capture_output=True, 
+                    'mvn clean package -DskipTests=true', 
+                    cwd=project_path,
+                    capture_output=True,
                     text=True,
-                    shell=False,
-                    env=dict(os.environ, JAVA_HOME=r'C:\Program Files\Java\jdk-17')  # Especificar JAVA_HOME explícitamente
+                    shell=True,
+                    env=maven_env
                 )
                 
-                # Log detallado de compilación
-                self.logger.info(f"Resultado de compilación - Código de retorno: {build_result.returncode}")
-                self.logger.info(f"STDOUT de compilación:\n{build_result.stdout}")
-                self.logger.info(f"STDERR de compilación:\n{build_result.stderr}")
-
-                if build_result.returncode != 0:
-                    self.logger.error("Error en compilación de Maven")
-                    self.logger.error(f"Detalles del error: {build_result.stderr}")
-                    return False
-                # Encontrar WAR generado
-                war_path = find_war(project_path)
+                # Log detallado de la compilación
+                self.logger.info(f"Build Maven - Código de retorno: {build_result.returncode}")
+                self.logger.info(f"Build Maven - STDOUT:\n{build_result.stdout}")
                 
-                # Nombre del WAR en Tomcat
+                if build_result.returncode != 0:
+                    self.logger.error(f"Error en build Maven:\n{build_result.stderr}")
+                    return False
+                
+                # 4. Buscar el WAR generado en la carpeta target
+                war_path = os.path.join(project_path, 'target', f"{project_name}.war")
+                if not os.path.exists(war_path):
+                    self.logger.error(f"No se encontró el WAR en: {war_path}")
+                    return False
+                
+                # 5. Preparar el despliegue en Tomcat
                 destination_war = os.path.join(webapps_dir, f"{project_name}.war")
                 
-                # Backup del WAR existente si existe
+                # 6. Hacer backup si existe
                 if os.path.exists(destination_war):
                     backup_path = f"{destination_war}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
                     shutil.copy2(destination_war, backup_path)
-                    self.logger.info(f"Backup de WAR existente: {backup_path}")
+                    self.logger.info(f"Backup creado en: {backup_path}")
                 
-                # Copiar nuevo WAR
-                shutil.copy2(war_path, destination_war)
-                self.logger.info(f"WAR desplegado: {destination_war}")
-                
-                # Detener e iniciar Tomcat
+                # 7. Detener Tomcat
                 self._execute_tomcat_command('stop', tomcat_home)
+                
+                # 8. Copiar nuevo WAR
+                shutil.copy2(war_path, destination_war)
+                self.logger.info(f"WAR desplegado en: {destination_war}")
+                
+                # 9. Iniciar Tomcat
                 self._execute_tomcat_command('start', tomcat_home)
                 
                 return True
-            
+                
             except Exception as build_error:
-                self.logger.error(f"Error en construcción/despliegue: {str(build_error)}")
+                self.logger.error(f"Error en proceso de build/deploy: {str(build_error)}")
                 return False
-        
+            
         except Exception as e:
-            self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
+            self.logger.error(f"Error general en operaciones Tomcat: {str(e)}")
             return False
+        
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         """
         Método unificado para ejecutar comandos de Tomcat con mayor robustez
