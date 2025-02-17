@@ -172,16 +172,32 @@ class DeploymentExecutor:
         Detener el servicio de Tomcat
         """
         try:
-            # Usar taskkill para forzar la detención
-            cmd = [
-                'taskkill', '/F', '/IM', 'java.exe', '/FI', f'"IMAGEPATH={tomcat_home}*"'
+            # Intentar detener Tomcat de múltiples formas
+            stop_methods = [
+                # Método 1: Usar shutdown.bat
+                [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
+                
+                # Método 2: Usar taskkill con nombre del proceso
+                ['taskkill', '/F', '/IM', 'catalina.exe'],
+                
+                # Método 3: Usar taskkill con filtro de imagen
+                ['taskkill', '/F', '/FI', f'"IMAGEPATH={tomcat_home}*"']
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+
+            for method in stop_methods:
+                try:
+                    result = subprocess.run(method, capture_output=True, text=True, shell=True)
+                    
+                    # Si el comando se ejecuta sin error o el proceso no existe
+                    if result.returncode == 0 or 'No tasks with specified criteria found.' in result.stderr:
+                        self.logger.info(f"Método de detención exitoso: {method}")
+                        return
+                except Exception as e:
+                    self.logger.warning(f"Método de detención fallido: {method}")
             
-            if result.returncode != 0 and 'ERROR: No tasks with specified criteria found.' not in result.stderr:
-                raise Exception(f"Error al detener Tomcat: {result.stderr}")
-            
-            self.logger.info("Tomcat detenido exitosamente")
+            # Si ningún método funciona
+            raise Exception("No se pudo detener Tomcat por ningún método")
+        
         except Exception as e:
             self.logger.error(f"Error al detener Tomcat: {str(e)}")
             raise
@@ -191,16 +207,24 @@ class DeploymentExecutor:
         Iniciar el servicio de Tomcat
         """
         try:
-            # Usar startup.bat con verificación
-            cmd = [
-                os.path.join(tomcat_home, 'bin', 'startup.bat')
+            # Rutas de inicio de Tomcat
+            startup_scripts = [
+                os.path.join(tomcat_home, 'bin', 'startup.bat'),
+                os.path.join(tomcat_home, 'bin', 'catalina.bat start')
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+
+            for script in startup_scripts:
+                try:
+                    result = subprocess.run(script, capture_output=True, text=True, shell=True)
+                    
+                    if result.returncode == 0:
+                        self.logger.info(f"Tomcat iniciado exitosamente con: {script}")
+                        return
+                except Exception as e:
+                    self.logger.warning(f"Método de inicio fallido: {script}")
             
-            if result.returncode != 0:
-                raise Exception(f"Error al iniciar Tomcat: {result.stderr}")
-            
-            self.logger.info("Tomcat iniciado exitosamente")
+            raise Exception("No se pudo iniciar Tomcat por ningún método")
+        
         except Exception as e:
             self.logger.error(f"Error al iniciar Tomcat: {str(e)}")
             raise
