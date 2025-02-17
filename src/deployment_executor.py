@@ -267,17 +267,23 @@ class DeploymentExecutor:
                 return True
 
             elif action == 'start':
-                # Usar 'catalina.bat run' en lugar de 'startup.bat'
+                # Usar catalina.bat en lugar de startup.bat
                 catalina_bat = os.path.join(tomcat_home, 'bin', 'catalina.bat')
-                cmd = f'"{catalina_bat}" run'
                 
-                # Iniciar Tomcat en segundo plano
-                subprocess.Popen(
-                    cmd,
+                # Crear el proceso de Tomcat desvinculado del proceso padre
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+
+                # Iniciar Tomcat como un proceso independiente
+                process = subprocess.Popen(
+                    f'cmd /c "{catalina_bat}" run',
                     shell=True,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NO_WINDOW  # Evita que se abra una nueva ventana
+                    stdin=subprocess.PIPE
                 )
                 
                 # Esperar a que Tomcat esté disponible
@@ -295,7 +301,8 @@ class DeploymentExecutor:
                     except Exception as e:
                         self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
 
-                return True
+                self.logger.error("Tomcat no respondió después de 60 segundos")
+                return False
 
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
