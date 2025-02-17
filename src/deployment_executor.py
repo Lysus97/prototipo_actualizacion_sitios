@@ -137,46 +137,34 @@ class DeploymentExecutor:
                 'error': str(e)
             }
 
-    def _manage_tomcat_operations(self, _site_config: Dict) -> bool:
+    def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         try:
-            # Rutas de los scripts de Tomcat
-            catalina_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
-            catalina_bat = f'"{catalina_home}\\bin\\catalina.bat"'
-
-            # Comandos de detención e inicio
-            stop_cmd = f'{catalina_bat} stop'
-            start_cmd = f'{catalina_bat} start'
-
+            # Rutas de Tomcat
+            tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
+            webapps_dir = os.path.join(tomcat_home, 'webapps')
+            
+            # Nombres de archivos
+            war_name = site_config.get('war.name', '')
+            context_path = site_config.get('context.path', '')
+            
             # Detener Tomcat
-            stop_result = subprocess.run(
-                stop_cmd, 
-                shell=True, 
-                capture_output=True, 
-                text=True
-            )
+            self._stop_tomcat(tomcat_home)
+            
+            # Backup del WAR actual si existe
+            war_path = os.path.join(webapps_dir, f"{war_name}.war")
+            if os.path.exists(war_path):
+                self._backup_war(war_path)
+                
+            # Copiar nuevo WAR
+            self._deploy_war(site_config, webapps_dir)
             
             # Iniciar Tomcat
-            start_result = subprocess.run(
-                start_cmd, 
-                shell=True, 
-                capture_output=True, 
-                text=True
-            )
+            self._start_tomcat(tomcat_home)
             
-            # Verificar resultados
-            if stop_result.returncode != 0:
-                self.logger.error(f"Error al detener Tomcat: {stop_result.stderr}")
-                return False
-            
-            if start_result.returncode != 0:
-                self.logger.error(f"Error al iniciar Tomcat: {start_result.stderr}")
-                return False
-            
-            self.logger.info("Operaciones de Tomcat completadas exitosamente")
             return True
-        
+            
         except Exception as e:
-            self.logger.error(f"Error en operaciones de Tomcat: {str(e)}")
+            self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
             return False
 
 def main():

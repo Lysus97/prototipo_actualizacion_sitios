@@ -1,5 +1,6 @@
 from typing import List, Dict
 import pandas as pd
+import logging
 
 def read_sites_excel(excel_path: str) -> List[Dict]:
     """
@@ -21,7 +22,10 @@ def read_sites_excel(excel_path: str) -> List[Dict]:
             'jdbc.URL',
             'tomcat.url',
             'tomcat.host',
-            'tomcat.modules'
+            'war.name',          # Nombre del WAR a desplegar
+            'context.path',      # Path en Tomcat (ej: /sitios_uno)
+            'db.user',           # Usuario BD
+            'db.password'        # Password BD
         ]
         
         # Verificar columnas requeridas
@@ -52,8 +56,10 @@ def validate_environment_config(site_config: Dict) -> Dict:
         db_type = site_config.get('dao.db', '').upper()
         if 'ORACLE' in db_type:
             prefix = 'upd.environment1'
+            db_scripts_path = 'src/main/resources/db/oracle'
         elif 'SQLSERVER' in db_type or 'MSSQL' in db_type:
             prefix = 'upd.environment2'
+            db_scripts_path = 'src/main/resources/db/sqlserver'
         else:
             raise ValueError(f"Tipo de base de datos no soportado: {db_type}")
             
@@ -62,6 +68,9 @@ def validate_environment_config(site_config: Dict) -> Dict:
             f"{prefix}.{key}": value 
             for key, value in site_config.items()
         }
+        
+        # Agregar ruta de scripts
+        prefixed_config['db.scripts.path'] = db_scripts_path
         
         return prefixed_config
         
