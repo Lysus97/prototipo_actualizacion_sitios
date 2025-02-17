@@ -71,40 +71,40 @@ class SVNManager:
             self.logger.error(f"Error en operaciones SVN: {str(e)}")
             return False
 
-def create_release_tag(self, site_config: Dict) -> bool:
-    try:
-        # Obtener versión del tag desde la configuración
-        version_to = site_config.get('prefix', "SVE_10_0_39")
-        
-        self.logger.info(f"Creando tag: {version_to}")
+    def create_release_tag(self, site_config: Dict) -> bool:
+        try:
+            # Obtener versión del tag desde la configuración
+            version_to = site_config.get('prefix', "SVE_10_0_39")
+            
+            self.logger.info(f"Creando tag: {version_to}")
 
-        # Construir rutas
-        source_url = f"{self.svn_url}/branches/SVE_5_7_1_mhcp"
-        target_url = f"{self.svn_url}/tags/{version_to}"
+            # Construir rutas
+            source_url = f"{self.svn_url}/branches/SVE_5_7_1_mhcp"
+            target_url = f"{self.svn_url}/tags/{version_to}"
 
-        # Crear comando SVN copy con la opción -F para forzar
-        cmd = [
-            'svn', 'copy',
-            source_url,
-            target_url,
-            '-m', f"Creating release tag {version_to}",
-            '--username', self.credentials['username'],
-            '--password', self.credentials['password'],
-            '--force',  # Añadir esta opción para sobrescribir tags existentes
-            '--non-interactive',
-            '--trust-server-cert'
-        ]
+            # Crear comando SVN copy con la opción -F para forzar
+            cmd = [
+                'svn', 'copy',
+                source_url,
+                target_url,
+                '-m', f"Creating release tag {version_to}",
+                '--username', self.credentials['username'],
+                '--password', self.credentials['password'],
+                '--force',  # Añadir esta opción para sobrescribir tags existentes
+                '--non-interactive',
+                '--trust-server-cert'
+            ]
 
-        # Para Windows, usar shell=True
-        result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
-        
-        if result.returncode != 0:
-            self.logger.error(f"Error al crear tag: {result.stderr}")
+            # Para Windows, usar shell=True
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            
+            if result.returncode != 0:
+                self.logger.error(f"Error al crear tag: {result.stderr}")
+                return False
+            
+            self.logger.info(f"Tag creado exitosamente: {version_to}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error al crear tag en SVN: {str(e)}")
             return False
-        
-        self.logger.info(f"Tag creado exitosamente: {version_to}")
-        return True
-
-    except Exception as e:
-        self.logger.error(f"Error al crear tag en SVN: {str(e)}")
-        return False
