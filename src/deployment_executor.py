@@ -141,8 +141,20 @@ class DeploymentExecutor:
 
     def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         try:
-            # Nombre del proyecto
-            project_name = site_config.get('war.name', '')
+            # Loguear toda la configuración para depuración
+            self.logger.info("Configuración completa recibida:")
+            for key, value in site_config.items():
+                self.logger.info(f"{key}: {value}")
+
+            # Nombre del proyecto - IMPORTANTE: usar el prefijo correcto
+            project_name = site_config.get('upd.environment1.war.name', '')
+            
+            # Loguear específicamente el nombre del proyecto
+            self.logger.info(f"Nombre del proyecto extraído: '{project_name}'")
+            
+            # Validar que el nombre no esté vacío
+            if not project_name:
+                raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
             
             # Rutas de Tomcat
             tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
@@ -162,11 +174,6 @@ class DeploymentExecutor:
             try:
                 # Checkout y construcción del proyecto
                 project_path = svn_manager.checkout_project(project_name)
-                
-                # Imprimir contenido del directorio para depuración
-                self.logger.info(f"Contenido de {project_path}:")
-                for item in os.listdir(project_path):
-                    self.logger.info(f"- {item}")
                 
                 # Compilar proyecto (asumiendo Maven)
                 build_result = subprocess.run(
@@ -210,7 +217,6 @@ class DeploymentExecutor:
         except Exception as e:
             self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
             return False
-
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         """
         Método unificado para ejecutar comandos de Tomcat con mayor robustez
