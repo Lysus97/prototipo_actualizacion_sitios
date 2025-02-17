@@ -142,94 +142,34 @@ class DeploymentExecutor:
 
     def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         try:
-            # Loguear toda la configuración para depuración
-            self.logger.info("Configuración completa recibida:")
-            for key, value in site_config.items():
-                self.logger.info(f"{key}: {value}")
-
-            # Nombre del proyecto - IMPORTANTE: usar el prefijo correcto
+            # Nombre del proyecto
             project_name = site_config.get('upd.environment1.war.name', '')
             
-            self.logger.info(f"Nombre del proyecto extraído: '{project_name}'")
-            
-            if not project_name:
-                raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
-            
-            # Configuraciones de rutas usando os.path.join
-            maven_home = os.path.join('C:\\', 'Program Files', 'Apache Software Foundation', 'apache-maven-3.9.8')
-            java_home = os.path.join('C:\\', 'Program Files', 'Java', 'jdk-17')
+            # Rutas de Tomcat
             tomcat_home = os.path.join('C:\\', 'Program Files', 'Apache Software Foundation', 'Tomcat 9.0')
             webapps_dir = os.path.join(tomcat_home, 'webapps')
             
-            # Verificar existencia de directorios
-            if not os.path.exists(maven_home):
-                self.logger.error(f"Directorio de Maven no encontrado: {maven_home}")
-                return False
-            
-            if not os.path.exists(java_home):
-                self.logger.error(f"Directorio de Java no encontrado: {java_home}")
-                return False
-            
+            # Verificar estado de Tomcat
+            def is_tomcat_running():
+                try:
+                    result = subprocess.run(
+                        ['tasklist', '/FI', 'IMAGENAME eq java.exe'],
+                        capture_output=True, 
+                        text=True, 
+                        shell=True
+                    )
+                    return 'tomcat' in result.stdout.lower()
+                except Exception:
+                    return False
             # Usar SVNManager para checkout
             svn_manager = SVNManager(logger=self.logger)
             
             try:
                 # 1. Hacer checkout del proyecto
                 project_path = svn_manager.checkout_project(project_name)
-                self.logger.info(f"Checkout completado en: {project_path}")
                 
-                # 2. Verificar pom.xml
-                pom_path = os.path.join(project_path, 'pom.xml')
-                if not os.path.exists(pom_path):
-                    raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
-                
-                # Preparar variables de entorno
-                maven_env = os.environ.copy()
-                maven_env.update({
-                    'JAVA_HOME': java_home,
-                    'M2_HOME': maven_home,
-                    'PATH': f"{maven_env.get('PATH', '')};{os.path.join(maven_home, 'bin')}"
-                })
-                
-                # Ruta completa al comando mvn
-                maven_cmd = os.path.join(maven_home, 'bin', 'mvn.cmd')
-                
-                # Verificar existencia del comando
-                if not os.path.exists(maven_cmd):
-                    self.logger.error(f"Comando Maven no encontrado: {maven_cmd}")
-                    return False
-                
-                # Comando de compilación completo
-                full_maven_cmd = [
-                    maven_cmd, 
-                    'clean', 
-                    'package', 
-                    '-DskipTests=true'
-                ]
-                
-                self.logger.info("Iniciando build con Maven...")
-                build_result = subprocess.run(
-                    full_maven_cmd,
-                    cwd=project_path,
-                    env=maven_env,
-                    capture_output=True,
-                    text=True,
-                    shell=True
-                )
-                
-                # Log detallado de la compilación
-                self.logger.info(f"Build Maven - Comando: {' '.join(full_maven_cmd)}")
-                self.logger.info(f"Build Maven - Código de retorno: {build_result.returncode}")
-                self.logger.info(f"Build Maven - STDOUT:\n{build_result.stdout}")
-                self.logger.info(f"Build Maven - STDERR:\n{build_result.stderr}")
-                
-                if build_result.returncode != 0:
-                    self.logger.error(f"Error en build Maven:\n{build_result.stderr}")
-                    return False
-                
-                # 4. Buscar el WAR generado en la carpeta target
+                # 2. Buscar WAR generado
                 target_dir = os.path.join(project_path, 'target')
-                self.logger.info(f"Buscando WARs en: {target_dir}")
                 wars = [
                     f for f in os.listdir(target_dir) 
                     if f.endswith('.war') and 
@@ -237,31 +177,53 @@ class DeploymentExecutor:
                     f.startswith(project_name)
                 ]
 
-                if wars:
-                    war_path = os.path.join(target_dir, wars[0])
-                    self.logger.info(f"WAR encontrado: {war_path}")
-                else:
+                if not wars:
                     self.logger.error(f"No se encontraron WARs en: {target_dir}")
                     return False
+
+                war_path = os.path.join(target_dir, wars[0])
+                destination_war = os.path.join(webapps_dir, f"{project_name}.war")
                 
-                # 5. Preparar el despliegue en Tomcat
-                destination_war = os.path.join(webapps_dir, f"{project_name}.war")  # Simplificamos el nombre para Tomcat
+                # 3. Preparar despliegue
+                # Intentar detener Tomcat solo si está corriendo
+                if is_tomcat_running():
+                    self.logger.info("Tomcat está corriendo. Intentando detener...")
+                    stop_result = self._execute_tomcat_command('stop', tomcat_home)
+                    if not stop_result:
+                        self.logger.warning("No se pudo detener Tomcat completamente")
                 
-                # 6. Hacer backup si existe
-                if os.path.exists(destination_war):
-                    backup_path = f"{destination_war}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
-                    shutil.copy2(destination_war, backup_path)
-                    self.logger.info(f"Backup creado en: {backup_path}")
+                # 4. Gestionar backup y despliegue de WAR
+                def remove_existing_war():
+                    try:
+                        if os.path.exists(destination_war):
+                            # Intentar eliminar el WAR existente
+                            os.remove(destination_war)
+                            # También eliminar el directorio descomprimido si existe
+                            webapp_dir = destination_war.replace('.war', '')
+                            if os.path.exists(webapp_dir):
+                                shutil.rmtree(webapp_dir)
+                    except Exception as e:
+                        self.logger.error(f"Error al eliminar WAR existente: {e}")
+                        return False
+                    return True
+
+                # Intentar eliminar WAR existente
+                if not remove_existing_war():
+                    self.logger.error("No se pudo eliminar WAR existente")
+                    return False
                 
-                # 7. Detener Tomcat
-                self._execute_tomcat_command('stop', tomcat_home)
+                # 5. Copiar nuevo WAR
+                try:
+                    shutil.copy2(war_path, destination_war)
+                    self.logger.info(f"WAR desplegado en: {destination_war}")
+                except Exception as copy_error:
+                    self.logger.error(f"Error al copiar WAR: {copy_error}")
+                    return False
                 
-                # 8. Copiar nuevo WAR
-                shutil.copy2(war_path, destination_war)
-                self.logger.info(f"WAR desplegado en: {destination_war}")
-                
-                # 9. Iniciar Tomcat
-                self._execute_tomcat_command('start', tomcat_home)
+                # 6. Iniciar Tomcat
+                start_result = self._execute_tomcat_command('start', tomcat_home)
+                if not start_result:
+                    self.logger.warning("No se pudo iniciar Tomcat completamente")
                 
                 return True
                 
@@ -272,7 +234,6 @@ class DeploymentExecutor:
         except Exception as e:
             self.logger.error(f"Error general en operaciones Tomcat: {str(e)}")
             return False
-        
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
