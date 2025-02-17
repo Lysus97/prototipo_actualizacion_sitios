@@ -198,13 +198,22 @@ class DeploymentExecutor:
                     return False
                 
                 # 4. Buscar el WAR generado en la carpeta target
-                war_path = os.path.join(project_path, 'target', f"{project_name}.war")
+                war_path = os.path.join(project_path, 'target', f"{project_name}-0.0.1-SNAPSHOT.war")
                 if not os.path.exists(war_path):
-                    self.logger.error(f"No se encontró el WAR en: {war_path}")
-                    return False
+                    # Intentar encontrar cualquier WAR en el directorio target
+                    target_dir = os.path.join(project_path, 'target')
+                    self.logger.info(f"Buscando WARs en: {target_dir}")
+                    wars = [f for f in os.listdir(target_dir) if f.endswith('.war') and not f.endswith('.original')]
+                    
+                    if wars:
+                        war_path = os.path.join(target_dir, wars[0])
+                        self.logger.info(f"WAR encontrado: {war_path}")
+                    else:
+                        self.logger.error(f"No se encontraron WARs en: {target_dir}")
+                        return False
                 
                 # 5. Preparar el despliegue en Tomcat
-                destination_war = os.path.join(webapps_dir, f"{project_name}.war")
+                destination_war = os.path.join(webapps_dir, f"{project_name}.war")  # Simplificamos el nombre para Tomcat
                 
                 # 6. Hacer backup si existe
                 if os.path.exists(destination_war):
