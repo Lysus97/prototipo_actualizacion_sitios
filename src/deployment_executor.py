@@ -233,6 +233,71 @@ class DeploymentExecutor:
             self.logger.error(f"Error crítico al {action} Tomcat: {str(e)}")
             raise
 
+    def _deploy_war(self, site_config, webapps_dir):
+        """
+        Desplegar nuevo archivo WAR
+        """
+        try:
+            # Obtener nombre del WAR de la configuración
+            war_name = site_config.get('war.name', '')
+            
+            # Rutas potenciales para encontrar el WAR
+            possible_paths = [
+                os.path.join(os.getcwd(), 'target', f"{war_name}.war"),
+                os.path.join(os.getcwd(), 'build', f"{war_name}.war"),
+                os.path.join(os.getcwd(), f"{war_name}.war")
+            ]
+            
+            # Buscar el WAR en las rutas definidas
+            source_war = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    source_war = path
+                    break
+            
+            # Si no se encuentra el WAR
+            if not source_war:
+                raise FileNotFoundError(f"No se encontró el archivo WAR para {war_name}")
+            
+            # Ruta de destino en webapps
+            destination_war = os.path.join(webapps_dir, f"{war_name}.war")
+            
+            # Importar shutil para copiar archivos
+            import shutil
+            
+            # Copiar WAR
+            shutil.copy2(source_war, destination_war)
+            
+            self.logger.info(f"WAR desplegado exitosamente: {destination_war}")
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"Error al desplegar WAR: {str(e)}")
+            raise
+
+    def _backup_war(self, war_path):
+        """
+        Crear backup del archivo WAR existente
+        """
+        try:
+            # Generar ruta de backup con timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{war_path}.{timestamp}.bak"
+            
+            # Importar shutil para copiar archivos
+            import shutil
+            
+            # Crear backup
+            shutil.copy2(war_path, backup_path)
+            
+            self.logger.info(f"Backup de WAR creado en: {backup_path}")
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"Error al crear backup de WAR: {str(e)}")
+            raise
+
 def main():
     """
     Ejemplo de uso del DeploymentExecutor
