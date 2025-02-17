@@ -262,31 +262,35 @@ class DeploymentExecutor:
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                subprocess.run(['sc', 'stop', 'Tomcat9'], check=True)
+                subprocess.run(['net', 'stop', 'Tomcat9'], 
+                            shell=True, 
+                            capture_output=True)
                 time.sleep(5)
-            elif action == 'start':
-                subprocess.run(['sc', 'start', 'Tomcat9'], check=True)
+                return True
                 
-            # Verificar estado
-            max_attempts = 12
-            for attempt in range(max_attempts):
-                time.sleep(5)
-                if self._check_tomcat_status():
-                    return True
-                    
-            return False
+            elif action == 'start':
+                subprocess.run(['net', 'start', 'Tomcat9'], 
+                            shell=True, 
+                            capture_output=True)
+                
+                # Verificar que Tomcat esté respondiendo
+                max_attempts = 12
+                for attempt in range(max_attempts):
+                    time.sleep(5)
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                            s.settimeout(1)
+                            result = s.connect_ex(('localhost', 8080))
+                            if result == 0:
+                                self.logger.info("Tomcat está respondiendo en puerto 8080")
+                                return True
+                    except Exception as e:
+                        self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
+                
+                return False
                 
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
-            return False
-
-    def _check_tomcat_status(self):
-        try:
-            result = subprocess.run(['sc', 'query', 'Tomcat9'], 
-                                capture_output=True, 
-                                text=True)
-            return "RUNNING" in result.stdout
-        except Exception:
             return False
         
     def _deploy_war(self, site_config, webapps_dir):
