@@ -171,36 +171,66 @@ class DeploymentExecutor:
 
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         """
-        Método unificado para ejecutar comandos de Tomcat
+        Método unificado para ejecutar comandos de Tomcat con mayor robustez
         """
         try:
+            # Definir métodos de detención/inicio según la acción
             if action == 'stop':
-                scripts = [
-                    os.path.join(tomcat_home, 'bin', 'shutdown.bat'),
-                    'net stop "Apache Tomcat 9.0 Tomcat9"'
+                commands = [
+                    # Método 1: Usar script de shutdown de Tomcat
+                    [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
+                    
+                    # Método 2: Usar net stop
+                    ['net', 'stop', 'Apache Tomcat 9.0 Tomcat9'],
+                    
+                    # Método 3: Taskkill para procesos específicos
+                    ['taskkill', '/F', '/IM', 'catalina.exe'],
+                    ['taskkill', '/F', '/IM', 'java.exe', '/FI', '"WINDOWTITLE eq Apache Tomcat"']
                 ]
             elif action == 'start':
-                scripts = [
-                    os.path.join(tomcat_home, 'bin', 'startup.bat'),
-                    'net start "Apache Tomcat 9.0 Tomcat9"'
+                commands = [
+                    # Método 1: Usar script de startup de Tomcat
+                    [os.path.join(tomcat_home, 'bin', 'startup.bat')],
+                    
+                    # Método 2: Usar net start
+                    ['net', 'start', 'Apache Tomcat 9.0 Tomcat9']
                 ]
             else:
                 raise ValueError(f"Acción no válida: {action}")
 
-            for script in scripts:
+            # Intentar cada método de comando
+            for cmd in commands:
                 try:
-                    result = subprocess.run(script, capture_output=True, text=True, shell=True)
+                    self.logger.info(f"Intentando {action} Tomcat con: {' '.join(cmd)}")
                     
+                    result = subprocess.run(
+                        cmd, 
+                        capture_output=True, 
+                        text=True, 
+                        shell=True,
+                        timeout=30  # Añadir timeout para evitar bloqueos
+                    )
+                    
+                    # Condiciones de éxito
                     if result.returncode == 0:
-                        self.logger.info(f"Comando {action} de Tomcat ejecutado: {script}")
+                        self.logger.info(f"Comando {action} de Tomcat ejecutado exitosamente")
                         return
-                except Exception as e:
-                    self.logger.warning(f"Método de {action} fallido: {script}")
-            
+                    
+                    # Log de salida en caso de fallo
+                    self.logger.warning(f"Comando fallido. Código: {result.returncode}")
+                    self.logger.warning(f"STDOUT: {result.stdout}")
+                    self.logger.warning(f"STDERR: {result.stderr}")
+
+                except subprocess.TimeoutExpired:
+                    self.logger.warning(f"Timeout en comando {cmd}")
+                except Exception as cmd_error:
+                    self.logger.warning(f"Error con comando {cmd}: {str(cmd_error)}")
+
+            # Si ningún método funciona
             raise Exception(f"No se pudo {action} Tomcat por ningún método")
         
         except Exception as e:
-            self.logger.error(f"Error al {action} Tomcat: {str(e)}")
+            self.logger.error(f"Error crítico al {action} Tomcat: {str(e)}")
             raise
 
 def main():
