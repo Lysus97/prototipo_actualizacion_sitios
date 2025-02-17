@@ -77,36 +77,77 @@ class DeploymentExecutor:
         
         return deployment_result
 
-    def _manage_svn_operations(self, site_config: Dict) -> Dict:
-        """
-        Maneja las operaciones de SVN para el despliegue.
-        
-        :param site_config: Configuración del sitio
-        :return: Resultado de las operaciones de SVN
-        """
+    def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         try:
-            # Inicializar SVNManager con el logger
+            # Nombre del proyecto
+            project_name = site_config.get('war.name', '')
+            
+            # Rutas de Tomcat
+            tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
+            webapps_dir = os.path.join(tomcat_home, 'webapps')
+            
+            # Usar SVNManager para checkout y build
             svn_manager = SVNManager(logger=self.logger)
             
-            # Realizar checkout/update
-            checkout_result = svn_manager.handle_svn_operations(site_config)
+            # Método para encontrar el WAR generado
+            def find_war(base_path):
+                for root, dirs, files in os.walk(base_path):
+                    for file in files:
+                        if file.endswith('.war'):
+                            return os.path.join(root, file)
+                raise FileNotFoundError(f"No se encontró WAR para {project_name}")
             
-            # Crear tag de release
-            tag_result = svn_manager.create_release_tag(site_config)
+            try:
+                # Checkout y construcción del proyecto
+                project_path = svn_manager.checkout_project(project_name)
+                
+                # Imprimir contenido del directorio para depuración
+                self.logger.info(f"Contenido de {project_path}:")
+                for item in os.listdir(project_path):
+                    self.logger.info(f"- {item}")
+                
+                # Compilar proyecto (asumiendo Maven)
+                build_result = subprocess.run(
+                    ['mvn', 'clean', 'package', '-DskipTests=true'], 
+                    cwd=project_path, 
+                    capture_output=True, 
+                    text=True,
+                    shell=False  # Cambiar a shell=False para mayor seguridad
+                )
+                
+                if build_result.returncode != 0:
+                    self.logger.error(f"Error en compilación: {build_result.stderr}")
+                    return False
+                
+                # Encontrar WAR generado
+                war_path = find_war(project_path)
+                
+                # Nombre del WAR en Tomcat
+                destination_war = os.path.join(webapps_dir, f"{project_name}.war")
+                
+                # Backup del WAR existente si existe
+                if os.path.exists(destination_war):
+                    backup_path = f"{destination_war}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
+                    shutil.copy2(destination_war, backup_path)
+                    self.logger.info(f"Backup de WAR existente: {backup_path}")
+                
+                # Copiar nuevo WAR
+                shutil.copy2(war_path, destination_war)
+                self.logger.info(f"WAR desplegado: {destination_war}")
+                
+                # Detener e iniciar Tomcat
+                self._execute_tomcat_command('stop', tomcat_home)
+                self._execute_tomcat_command('start', tomcat_home)
+                
+                return True
             
-            return {
-                'success': checkout_result and tag_result,
-                'checkout': checkout_result,
-                'tag_creation': tag_result
-            }
+            except Exception as build_error:
+                self.logger.error(f"Error en construcción/despliegue: {str(build_error)}")
+                return False
         
         except Exception as e:
-            self.logger.error(f"Error en operaciones SVN: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
+            self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
+            return False
     def _prepare_tomcat_deployment(self, site_config: Dict) -> Dict:
         """
         Prepara el despliegue para Tomcat basándose en la configuración.

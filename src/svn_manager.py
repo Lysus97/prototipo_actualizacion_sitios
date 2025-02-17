@@ -125,33 +125,66 @@ class SVNManager:
         Hacer checkout de un proyecto específico de SVN
         """
         try:
-            # Ruta base del repositorio SVN
-            repo_base_url = "https://localhost/svn/test_repo/branches/SVE_5_7_1_mhcp"
-            project_url = f"{repo_base_url}/{project_name}"
+            # Verificar que los parámetros básicos estén definidos
+            if not project_name:
+                raise ValueError("Nombre de proyecto no especificado")
+
+            # Rutas base configurables
+            svn_base_url = "https://localhost/svn/test_repo/branches/SVE_5_7_1_mhcp"
+            project_url = f"{svn_base_url}/{project_name}"
             
-            # Directorio local para checkout
-            local_path = os.path.join(os.getcwd(), 'projects', project_name)
+            # Directorio base para checkouts
+            base_checkout_dir = os.path.join(os.getcwd(), 'projects')
+            os.makedirs(base_checkout_dir, exist_ok=True)
             
-            # Crear directorio si no existe
+            # Directorio específico para este proyecto
+            local_path = os.path.join(base_checkout_dir, project_name)
+            
+            # Limpiar directorio existente si ya existe
+            if os.path.exists(local_path):
+                shutil.rmtree(local_path)
+            
+            # Crear directorio para checkout
             os.makedirs(local_path, exist_ok=True)
             
             # Comando de checkout de SVN
             checkout_cmd = [
-                'svn', 'checkout',
-                project_url,
-                local_path,
-                '--username', self.credentials['username'],
-                '--password', self.credentials['password']
+                'svn', 
+                'checkout', 
+                project_url, 
+                local_path, 
+                '--username', self.credentials['username'], 
+                '--password', self.credentials['password'],
+                '--non-interactive',
+                '--trust-server-cert'
             ]
             
+            # Depuración: Mostrar comando que se va a ejecutar
+            self.logger.info(f"Ejecutando comando: {' '.join(checkout_cmd)}")
+            
             # Ejecutar checkout
-            checkout_result = subprocess.run(checkout_cmd, capture_output=True, text=True)
+            checkout_result = subprocess.run(
+                checkout_cmd, 
+                capture_output=True, 
+                text=True, 
+                shell=False  # Cambiar a shell=False para mayor seguridad
+            )
             
+            # Verificar resultado del checkout
             if checkout_result.returncode != 0:
-                raise Exception(f"Error en checkout: {checkout_result.stderr}")
+                # Log detallado del error
+                self.logger.error(f"Error en checkout de SVN:\nCódigo: {checkout_result.returncode}")
+                self.logger.error(f"STDOUT: {checkout_result.stdout}")
+                self.logger.error(f"STDERR: {checkout_result.stderr}")
+                raise Exception(f"Error en checkout de SVN: {checkout_result.stderr}")
             
+            # Verificar que el directorio no esté vacío
+            if not os.listdir(local_path):
+                raise Exception("El directorio de checkout está vacío")
+            
+            self.logger.info(f"Checkout exitoso para {project_name} en {local_path}")
             return local_path
         
         except Exception as e:
-            self.logger.error(f"Error al hacer checkout de {project_name}: {str(e)}")
+            self.logger.error(f"Error completo en checkout de {project_name}: {str(e)}")
             raise
