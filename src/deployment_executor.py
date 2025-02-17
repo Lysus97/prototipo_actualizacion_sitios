@@ -261,70 +261,42 @@ class DeploymentExecutor:
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                # Métodos de detención más seguros
-                stop_methods = [
-                    ['net', 'stop', '"Apache Tomcat 9.0 Tomcat9"'],
-                    [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
-                    ['taskkill', '/F', '/IM', 'java.exe', '/FI', 'WINDOWTITLE eq Apache Tomcat']
-                ]
+                # Detener Tomcat
+                cmd = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
+                subprocess.run(cmd, shell=True, timeout=30)
+                time.sleep(5)  # Esperar a que se detenga
+                return True
 
-                for method in stop_methods:
-                    try:
-                        self.logger.info(f"Intentando detener Tomcat con: {' '.join(method)}")
-                        result = subprocess.run(
-                            method, 
-                            capture_output=True, 
-                            text=True, 
-                            shell=True,
-                            timeout=15  # Reducir tiempo de espera
-                        )
-                        
-                        if result.returncode == 0:
-                            self.logger.info(f"Método de detención exitoso: {' '.join(method)}")
-                            time.sleep(3)  # Reducir tiempo de espera
-                            return True
-                        
-                        self.logger.warning(f"Método fallido. Código: {result.returncode}")
-                    except Exception as e:
-                        self.logger.warning(f"Error en método de detención: {e}")
-
-                self.logger.warning("No se pudo detener completamente Tomcat")
-                return True  # Continuar con el despliegue incluso si la detención no fue perfecta
-                    
             elif action == 'start':
-                # Métodos de inicio
-                start_methods = [
-                    os.path.join(tomcat_home, 'bin', 'startup.bat'),
-                    'net start "Apache Tomcat 9.0 Tomcat9"'
-                ]
-
-                for method in start_methods:
+                # Iniciar Tomcat usando 'start' para no bloquear
+                cmd = f'start /B "" "{os.path.join(tomcat_home, "bin", "startup.bat")}"'
+                subprocess.run(cmd, shell=True, timeout=30)
+                
+                # Verificar que Tomcat inició correctamente (máximo 30 segundos)
+                max_attempts = 6
+                for attempt in range(max_attempts):
                     try:
-                        self.logger.info(f"Intentando iniciar Tomcat con: {method}")
+                        time.sleep(5)  # Esperar 5 segundos entre intentos
+                        # Verificar si el proceso está corriendo
                         result = subprocess.run(
-                            method, 
-                            capture_output=True, 
-                            text=True, 
-                            shell=True,
-                            timeout=15  # Reducir tiempo de espera
+                            ['tasklist', '/FI', 'IMAGENAME eq java.exe'],
+                            capture_output=True,
+                            text=True
                         )
-                        
-                        if result.returncode == 0:
-                            self.logger.info(f"Método de inicio exitoso: {method}")
-                            time.sleep(5)  # Reducir tiempo de espera
+                        if 'java.exe' in result.stdout:
+                            self.logger.info("Tomcat iniciado correctamente")
                             return True
-                        
-                        self.logger.warning(f"Método de inicio fallido: {method}")
+                        else:
+                            self.logger.info(f"Esperando a Tomcat... intento {attempt + 1}/{max_attempts}")
                     except Exception as e:
-                        self.logger.warning(f"Error en método de inicio: {e}")
+                        self.logger.warning(f"Error verificando Tomcat: {e}")
+                        
+                self.logger.warning("No se pudo verificar inicio de Tomcat, pero continuando...")
+                return True
 
-                self.logger.warning("No se pudo iniciar completamente Tomcat")
-                return True  # Continuar con el despliegue incluso si el inicio no fue perfecto
-                    
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
-            return True  # Continuar con el despliegue
-
+            return False
     def _deploy_war(self, site_config, webapps_dir):
         """
         Desplegar nuevo archivo WAR
