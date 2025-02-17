@@ -126,8 +126,12 @@ class SVNManager:
         Hacer checkout de un proyecto específico de SVN
         """
         try:
+            # Log adicional de depuración
+            self.logger.info(f"Intentando checkout para proyecto: '{project_name}'")
+
             # Verificar que los parámetros básicos estén definidos
             if not project_name:
+                self.logger.error("Nombre de proyecto no especificado")
                 raise ValueError("Nombre de proyecto no especificado")
 
             # Rutas base configurables
@@ -141,8 +145,15 @@ class SVNManager:
             # Directorio específico para este proyecto
             local_path = os.path.join(base_checkout_dir, project_name)
             
+            # Log de URLs y paths
+            self.logger.info(f"URL base SVN: {svn_base_url}")
+            self.logger.info(f"URL completa del proyecto: {project_url}")
+            self.logger.info(f"Directorio base de checkout: {base_checkout_dir}")
+            self.logger.info(f"Directorio local de checkout: {local_path}")
+            
             # Limpiar directorio existente si ya existe
             if os.path.exists(local_path):
+                self.logger.info(f"Eliminando directorio existente: {local_path}")
                 shutil.rmtree(local_path)
             
             # Crear directorio para checkout
@@ -178,6 +189,11 @@ class SVNManager:
                 self.logger.error(f"STDOUT: {checkout_result.stdout}")
                 self.logger.error(f"STDERR: {checkout_result.stderr}")
                 raise Exception(f"Error en checkout de SVN: {checkout_result.stderr}")
+            
+            # Log de contenido del directorio
+            self.logger.info("Contenido del directorio de checkout:")
+            for item in os.listdir(local_path):
+                self.logger.info(f"- {item}")
             
             # Verificar que el directorio no esté vacío
             if not os.listdir(local_path):

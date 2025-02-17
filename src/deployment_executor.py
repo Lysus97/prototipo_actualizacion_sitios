@@ -175,19 +175,25 @@ class DeploymentExecutor:
                 # Checkout y construcción del proyecto
                 project_path = svn_manager.checkout_project(project_name)
                 
-                # Compilar proyecto (asumiendo Maven)
+                # Compilar proyecto
                 build_result = subprocess.run(
                     ['mvn', 'clean', 'package', '-DskipTests=true'], 
                     cwd=project_path, 
                     capture_output=True, 
                     text=True,
-                    shell=False  # Cambiar a shell=False para mayor seguridad
+                    shell=False,
+                    env=dict(os.environ, JAVA_HOME=r'C:\Program Files\Java\jdk-17')  # Especificar JAVA_HOME explícitamente
                 )
                 
+                # Log detallado de compilación
+                self.logger.info(f"Resultado de compilación - Código de retorno: {build_result.returncode}")
+                self.logger.info(f"STDOUT de compilación:\n{build_result.stdout}")
+                self.logger.info(f"STDERR de compilación:\n{build_result.stderr}")
+
                 if build_result.returncode != 0:
-                    self.logger.error(f"Error en compilación: {build_result.stderr}")
+                    self.logger.error("Error en compilación de Maven")
+                    self.logger.error(f"Detalles del error: {build_result.stderr}")
                     return False
-                
                 # Encontrar WAR generado
                 war_path = find_war(project_path)
                 
