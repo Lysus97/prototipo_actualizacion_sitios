@@ -2,6 +2,8 @@ import sys
 import os
 import subprocess
 import logging
+import shutil
+from datetime import datetime
 from typing import Dict, Any
 
 # Añadir la ruta del proyecto al sys.path
@@ -138,32 +140,69 @@ class DeploymentExecutor:
             }
 
     def _manage_tomcat_operations(self, site_config: Dict) -> bool:
-        """
-        Gestiona todas las operaciones de Tomcat de manera centralizada
-        """
         try:
+            # Importar shutil al inicio del archivo o aquí
+            import shutil
+
+            # Nombre del proyecto
+            project_name = site_config.get('war.name', '')
+            
             # Rutas de Tomcat
             tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
             webapps_dir = os.path.join(tomcat_home, 'webapps')
             
-            # Obtener configuraciones
-            war_name = site_config.get('war.name', '')
-            war_path = os.path.join(webapps_dir, f"{war_name}.war")
-
-            # Detener Tomcat
-            self._execute_tomcat_command('stop', tomcat_home)
+            # Usar SVNManager para checkout y build
+            svn_manager = SVNManager(logger=self.logger)
             
-            # Backup de WAR existente
-            if os.path.exists(war_path):
-                self._backup_war(war_path)
+            # Método para encontrar el WAR generado
+            def find_war(base_path):
+                for root, dirs, files in os.walk(base_path):
+                    for file in files:
+                        if file.endswith('.war'):
+                            return os.path.join(root, file)
+                raise FileNotFoundError(f"No se encontró WAR para {project_name}")
             
-            # Desplegar nuevo WAR
-            self._deploy_war(site_config, webapps_dir)
+            try:
+                # Checkout y construcción del proyecto
+                project_path = svn_manager.checkout_project(project_name)
+                
+                # Compilar proyecto (asumiendo Maven)
+                build_result = subprocess.run(
+                    ['mvn', 'clean', 'package', '-DskipTests=true'], 
+                    cwd=project_path, 
+                    capture_output=True, 
+                    text=True
+                )
+                
+                if build_result.returncode != 0:
+                    self.logger.error(f"Error en compilación: {build_result.stderr}")
+                    return False
+                
+                # Encontrar WAR generado
+                war_path = find_war(project_path)
+                
+                # Nombre del WAR en Tomcat
+                destination_war = os.path.join(webapps_dir, f"{project_name}.war")
+                
+                # Backup del WAR existente si existe
+                if os.path.exists(destination_war):
+                    backup_path = f"{destination_war}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
+                    shutil.copy2(destination_war, backup_path)
+                    self.logger.info(f"Backup de WAR existente: {backup_path}")
+                
+                # Copiar nuevo WAR
+                shutil.copy2(war_path, destination_war)
+                self.logger.info(f"WAR desplegado: {destination_war}")
+                
+                # Detener e iniciar Tomcat
+                self._execute_tomcat_command('stop', tomcat_home)
+                self._execute_tomcat_command('start', tomcat_home)
+                
+                return True
             
-            # Iniciar Tomcat
-            self._execute_tomcat_command('start', tomcat_home)
-            
-            return True
+            except Exception as build_error:
+                self.logger.error(f"Error en construcción/despliegue: {str(build_error)}")
+                return False
         
         except Exception as e:
             self.logger.error(f"Error en operaciones Tomcat: {str(e)}")

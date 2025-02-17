@@ -120,9 +120,9 @@ class SVNManager:
             self.logger.error(f"Error al crear tag en SVN: {str(e)}")
             return False
         
-    def checkout_and_build_project(self, project_name):
+    def checkout_project(self, project_name):
         """
-        Hacer checkout de un proyecto de SVN y compilarlo
+        Hacer checkout de un proyecto específico de SVN
         """
         try:
             # Ruta base del repositorio SVN
@@ -150,39 +150,8 @@ class SVNManager:
             if checkout_result.returncode != 0:
                 raise Exception(f"Error en checkout: {checkout_result.stderr}")
             
-            # Compilar con Maven
-            build_cmd = [
-                'mvn', 'clean', 'package', 
-                '-DskipTests=true'  # Opcional: saltar tests
-            ]
-            
-            # Ejecutar desde el directorio del proyecto
-            build_result = subprocess.run(
-                build_cmd, 
-                cwd=local_path, 
-                capture_output=True, 
-                text=True
-            )
-            
-            if build_result.returncode != 0:
-                raise Exception(f"Error en compilación: {build_result.stderr}")
-            
-            # Buscar el WAR generado
-            war_path = self._find_war_file(local_path)
-            
-            return war_path
+            return local_path
         
         except Exception as e:
-            self.logger.error(f"Error al compilar proyecto {project_name}: {str(e)}")
+            self.logger.error(f"Error al hacer checkout de {project_name}: {str(e)}")
             raise
-
-    def _find_war_file(self, base_path):
-        """
-        Encontrar archivo WAR en un directorio
-        """
-        for root, dirs, files in os.walk(base_path):
-            for file in files:
-                if file.endswith('.war'):
-                    return os.path.join(root, file)
-        
-        raise FileNotFoundError("No se encontró archivo WAR")
