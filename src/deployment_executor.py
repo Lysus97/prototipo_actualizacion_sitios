@@ -228,19 +228,21 @@ class DeploymentExecutor:
                     return False
                 
                 # 4. Buscar el WAR generado en la carpeta target
-                war_path = os.path.join(project_path, 'target', f"{project_name}-0.0.1-SNAPSHOT.war")
-                if not os.path.exists(war_path):
-                    # Intentar encontrar cualquier WAR en el directorio target
-                    target_dir = os.path.join(project_path, 'target')
-                    self.logger.info(f"Buscando WARs en: {target_dir}")
-                    wars = [f for f in os.listdir(target_dir) if f.endswith('.war') and not f.endswith('.original')]
-                    
-                    if wars:
-                        war_path = os.path.join(target_dir, wars[0])
-                        self.logger.info(f"WAR encontrado: {war_path}")
-                    else:
-                        self.logger.error(f"No se encontraron WARs en: {target_dir}")
-                        return False
+                target_dir = os.path.join(project_path, 'target')
+                self.logger.info(f"Buscando WARs en: {target_dir}")
+                wars = [
+                    f for f in os.listdir(target_dir) 
+                    if f.endswith('.war') and 
+                    not f.endswith('.original') and 
+                    f.startswith(project_name)
+                ]
+
+                if wars:
+                    war_path = os.path.join(target_dir, wars[0])
+                    self.logger.info(f"WAR encontrado: {war_path}")
+                else:
+                    self.logger.error(f"No se encontraron WARs en: {target_dir}")
+                    return False
                 
                 # 5. Preparar el despliegue en Tomcat
                 destination_war = os.path.join(webapps_dir, f"{project_name}.war")  # Simplificamos el nombre para Tomcat
@@ -274,32 +276,78 @@ class DeploymentExecutor:
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                # Primero intentar detener gracefully
-                shutdown_cmd = [os.path.join(tomcat_home, 'bin', 'shutdown.bat')]
-                
-                # Si falla, matar el proceso por puerto
-                kill_cmd = ['taskkill', '/F', '/IM', 'java.exe']
-                
-                for cmd in [shutdown_cmd, kill_cmd]:
+                # Intentar detener de múltiples formas
+                stop_methods = [
+                    [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
+                    ['taskkill', '/F', '/IM', 'java.exe', '/FI', 'WINDOWTITLE eq Apache Tomcat'],
+                    ['net', 'stop', '"Apache Tomcat 9.0 Tomcat9"']
+                ]
+
+                for method in stop_methods:
                     try:
-                        self.logger.info(f"Intentando {action} Tomcat con: {' '.join(cmd)}")
-                        subprocess.run(cmd, shell=True, timeout=30)
-                        time.sleep(5)  # Dar tiempo a que se detenga
-                    except:
-                        continue
+                        self.logger.info(f"Intentando detener Tomcat con: {' '.join(method)}")
+                        result = subprocess.run(
+                            method, 
+                            capture_output=True, 
+                            text=True,
+                            shell=True,
+                            timeout=30
+                        )
                         
-                return True
-                
+                        # Condiciones de éxito más flexibles
+                        if result.returncode == 0:
+                            self.logger.info(f"Método de detención exitoso: {' '.join(method)}")
+                            time.sleep(5)  # Dar tiempo para detener
+                            return True
+                        
+                        # Log de salida en caso de fallo
+                        self.logger.warning(f"Método fallido. Código: {result.returncode}")
+                        self.logger.warning(f"STDOUT: {result.stdout}")
+                        self.logger.warning(f"STDERR: {result.stderr}")
+
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning(f"Timeout en método: {method}")
+                    except Exception as cmd_error:
+                        self.logger.warning(f"Error con método: {cmd_error}")
+
+                # Si ningún método funciona
+                self.logger.error("No se pudo detener Tomcat por ningún método")
+                return False
+                    
             elif action == 'start':
-                startup_cmd = os.path.join(tomcat_home, 'bin', 'startup.bat')
-                subprocess.run(startup_cmd, shell=True)
-                time.sleep(10)  # Dar tiempo a que inicie
-                return True
-                
+                startup_scripts = [
+                    os.path.join(tomcat_home, 'bin', 'startup.bat'),
+                    'net start "Apache Tomcat 9.0 Tomcat9"'
+                ]
+
+                for script in startup_scripts:
+                    try:
+                        self.logger.info(f"Intentando iniciar Tomcat con: {script}")
+                        result = subprocess.run(
+                            script, 
+                            capture_output=True, 
+                            text=True, 
+                            shell=True,
+                            timeout=30
+                        )
+                        
+                        if result.returncode == 0:
+                            self.logger.info(f"Iniciado exitosamente con: {script}")
+                            time.sleep(10)  # Dar tiempo para iniciar
+                            return True
+                        
+                        self.logger.warning(f"Método de inicio fallido: {script}")
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning(f"Timeout al iniciar: {script}")
+                    except Exception as start_error:
+                        self.logger.warning(f"Error al iniciar: {start_error}")
+
+                self.logger.error("No se pudo iniciar Tomcat")
+                return False
+                    
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
             return False
-
     def _deploy_war(self, site_config, webapps_dir):
         """
         Desplegar nuevo archivo WAR
