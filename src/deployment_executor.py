@@ -155,9 +155,20 @@ class DeploymentExecutor:
             if not project_name:
                 raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
             
-            # Rutas de Tomcat
-            tomcat_home = r'C:\\Program Files\Apache Software Foundation\\Tomcat 9.0'
+            # Configuraciones de rutas usando os.path.join
+            maven_home = os.path.join('C:\\', 'Program Files', 'Apache Software Foundation', 'apache-maven-3.9.8')
+            java_home = os.path.join('C:\\', 'Program Files', 'Java', 'jdk-17')
+            tomcat_home = os.path.join('C:\\', 'Program Files', 'Apache Software Foundation', 'Tomcat 9.0')
             webapps_dir = os.path.join(tomcat_home, 'webapps')
+            
+            # Verificar existencia de directorios
+            if not os.path.exists(maven_home):
+                self.logger.error(f"Directorio de Maven no encontrado: {maven_home}")
+                return False
+            
+            if not os.path.exists(java_home):
+                self.logger.error(f"Directorio de Java no encontrado: {java_home}")
+                return False
             
             # Usar SVNManager para checkout
             svn_manager = SVNManager(logger=self.logger)
@@ -172,44 +183,45 @@ class DeploymentExecutor:
                 if not os.path.exists(pom_path):
                     raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
                 
-                # Después de verificar pom.xml
-                maven_cmd = 'mvn clean package -DskipTests=true'
-                if os.name == 'nt':  # Windows
-                    maven_cmd = '{}\\bin\\mvn.cmd clean package -DskipTests=true'.format(
-                        r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8'
-                    )
-                
-                # 3. Ejecutar Maven con todas las variables de entorno necesarias
-                maven_env = dict(os.environ)
-                maven_env.update({
-                    'JAVA_HOME': r'C:\\Program Files\\Java\\jdk-17',
-                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8',
-                    'PATH': f"{maven_env.get('PATH', '')};C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8\bin"
-                })
-
-                # Configurar entorno para Maven
+                # Preparar variables de entorno
                 maven_env = os.environ.copy()
                 maven_env.update({
-                    'JAVA_HOME': r'C:\\Program Files\\Java\\jdk-17',
-                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8',
-                    'PATH': r"{};C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8\bin".format(
-                        maven_env.get('PATH', '')
-                    )
+                    'JAVA_HOME': java_home,
+                    'M2_HOME': maven_home,
+                    'PATH': f"{maven_env.get('PATH', '')};{os.path.join(maven_home, 'bin')}"
                 })
+                
+                # Ruta completa al comando mvn
+                maven_cmd = os.path.join(maven_home, 'bin', 'mvn.cmd')
+                
+                # Verificar existencia del comando
+                if not os.path.exists(maven_cmd):
+                    self.logger.error(f"Comando Maven no encontrado: {maven_cmd}")
+                    return False
+                
+                # Comando de compilación completo
+                full_maven_cmd = [
+                    maven_cmd, 
+                    'clean', 
+                    'package', 
+                    '-DskipTests=true'
+                ]
                 
                 self.logger.info("Iniciando build con Maven...")
                 build_result = subprocess.run(
-                    maven_cmd,
+                    full_maven_cmd,
                     cwd=project_path,
                     env=maven_env,
-                    shell=True,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    shell=True
                 )
                 
                 # Log detallado de la compilación
+                self.logger.info(f"Build Maven - Comando: {' '.join(full_maven_cmd)}")
                 self.logger.info(f"Build Maven - Código de retorno: {build_result.returncode}")
                 self.logger.info(f"Build Maven - STDOUT:\n{build_result.stdout}")
+                self.logger.info(f"Build Maven - STDERR:\n{build_result.stderr}")
                 
                 if build_result.returncode != 0:
                     self.logger.error(f"Error en build Maven:\n{build_result.stderr}")
