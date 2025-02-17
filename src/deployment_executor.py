@@ -166,6 +166,71 @@ class DeploymentExecutor:
         except Exception as e:
             self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
             return False
+        
+    def _stop_tomcat(self, tomcat_home):
+        """
+        Detener el servicio de Tomcat
+        """
+        try:
+            # Comando para detener Tomcat
+            cmd = [
+                os.path.join(tomcat_home, 'bin', 'shutdown.bat')
+            ]
+            subprocess.run(cmd, shell=True, check=True)
+            self.logger.info("Tomcat detenido exitosamente")
+        except Exception as e:
+            self.logger.error(f"Error al detener Tomcat: {str(e)}")
+            raise
+
+    def _start_tomcat(self, tomcat_home):
+        """
+        Iniciar el servicio de Tomcat
+        """
+        try:
+            # Comando para iniciar Tomcat
+            cmd = [
+                os.path.join(tomcat_home, 'bin', 'startup.bat')
+            ]
+            subprocess.run(cmd, shell=True, check=True)
+            self.logger.info("Tomcat iniciado exitosamente")
+        except Exception as e:
+            self.logger.error(f"Error al iniciar Tomcat: {str(e)}")
+            raise
+
+    def _backup_war(self, war_path):
+        """
+        Crear backup del archivo WAR existente
+        """
+        try:
+            backup_path = f"{war_path}.bak"
+            import shutil
+            shutil.copy2(war_path, backup_path)
+            self.logger.info(f"Backup de WAR creado en: {backup_path}")
+        except Exception as e:
+            self.logger.error(f"Error al crear backup de WAR: {str(e)}")
+            raise
+
+    def _deploy_war(self, site_config, webapps_dir):
+        """
+        Desplegar nuevo archivo WAR
+        """
+        try:
+            war_name = site_config.get('war.name', '')
+            # Suponiendo que tienes el WAR en un directorio específico
+            source_war = os.path.join(os.getcwd(), 'target', f"{war_name}.war")
+            
+            if not os.path.exists(source_war):
+                raise FileNotFoundError(f"Archivo WAR no encontrado: {source_war}")
+            
+            # Copiar WAR a directorio de webapps
+            destination_war = os.path.join(webapps_dir, f"{war_name}.war")
+            import shutil
+            shutil.copy2(source_war, destination_war)
+            
+            self.logger.info(f"WAR desplegado: {destination_war}")
+        except Exception as e:
+            self.logger.error(f"Error al desplegar WAR: {str(e)}")
+            raise
 
 def main():
     """

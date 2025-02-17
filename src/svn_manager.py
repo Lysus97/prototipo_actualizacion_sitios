@@ -73,16 +73,14 @@ class SVNManager:
 
     def create_release_tag(self, site_config: Dict) -> bool:
         try:
-            # Obtener versión del tag desde la configuración
             version_to = site_config.get('prefix', "SVE_10_0_39")
             
             self.logger.info(f"Creando tag: {version_to}")
 
-            # Construir rutas
             source_url = f"{self.svn_url}/branches/SVE_5_7_1_mhcp"
             target_url = f"{self.svn_url}/tags/{version_to}"
 
-            # Crear comando SVN copy con la opción -F para forzar
+            # Eliminar la opción --force
             cmd = [
                 'svn', 'copy',
                 source_url,
@@ -90,12 +88,10 @@ class SVNManager:
                 '-m', f"Creating release tag {version_to}",
                 '--username', self.credentials['username'],
                 '--password', self.credentials['password'],
-                '--force',  # Añadir esta opción para sobrescribir tags existentes
                 '--non-interactive',
                 '--trust-server-cert'
             ]
 
-            # Para Windows, usar shell=True
             result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
             
             if result.returncode != 0:
