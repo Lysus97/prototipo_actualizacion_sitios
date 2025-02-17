@@ -171,6 +171,13 @@ class DeploymentExecutor:
                 if not os.path.exists(pom_path):
                     raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
                 
+                # Después de verificar pom.xml
+                maven_cmd = 'mvn clean package -DskipTests=true'
+                if os.name == 'nt':  # Windows
+                    maven_cmd = '{}\\bin\\mvn.cmd clean package -DskipTests=true'.format(
+                        r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8'
+                    )
+                
                 # 3. Ejecutar Maven con todas las variables de entorno necesarias
                 maven_env = dict(os.environ)
                 maven_env.update({
@@ -178,15 +185,25 @@ class DeploymentExecutor:
                     'M2_HOME': r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8',
                     'PATH': f"{maven_env.get('PATH', '')};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin"
                 })
+
+                # Configurar entorno para Maven
+                maven_env = os.environ.copy()
+                maven_env.update({
+                    'JAVA_HOME': r'C:\Program Files\Java\jdk-17',
+                    'M2_HOME': r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8',
+                    'PATH': r"{};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin".format(
+                        maven_env.get('PATH', '')
+                    )
+                })
                 
                 self.logger.info("Iniciando build con Maven...")
                 build_result = subprocess.run(
-                    'mvn clean package -DskipTests=true', 
+                    maven_cmd,
                     cwd=project_path,
-                    capture_output=True,
-                    text=True,
+                    env=maven_env,
                     shell=True,
-                    env=maven_env
+                    capture_output=True,
+                    text=True
                 )
                 
                 # Log detallado de la compilación
