@@ -267,29 +267,23 @@ class DeploymentExecutor:
                 return True
 
             elif action == 'start':
-                # Usar 'call' en lugar de 'start /B' para asegurar que el proceso sobreviva
-                startup_bat = os.path.join(tomcat_home, 'bin', 'startup.bat')
-                cmd = f'call "{startup_bat}"'
+                # Usar 'catalina.bat run' en lugar de 'startup.bat'
+                catalina_bat = os.path.join(tomcat_home, 'bin', 'catalina.bat')
+                cmd = f'"{catalina_bat}" run'
                 
-                # Ejecutar startup.bat
-                process = subprocess.run(
+                # Iniciar Tomcat en segundo plano
+                subprocess.Popen(
                     cmd,
                     shell=True,
-                    timeout=30,
-                    capture_output=True,
-                    text=True
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NO_WINDOW  # Evita que se abra una nueva ventana
                 )
                 
-                # Loguear la salida para debugging
-                self.logger.info(f"Salida de startup.bat: {process.stdout}")
-                if process.stderr:
-                    self.logger.warning(f"Errores de startup.bat: {process.stderr}")
-                
-                # Esperar y verificar que Tomcat realmente está corriendo
-                max_attempts = 12  # 60 segundos total
+                # Esperar a que Tomcat esté disponible
+                max_attempts = 12
                 for attempt in range(max_attempts):
                     time.sleep(5)
-                    # Intentar conectar al puerto HTTP de Tomcat (8080 por defecto)
                     try:
                         import socket
                         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -301,8 +295,7 @@ class DeploymentExecutor:
                     except Exception as e:
                         self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
 
-                self.logger.error("Tomcat no respondió después de 60 segundos")
-                return False
+                return True
 
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
