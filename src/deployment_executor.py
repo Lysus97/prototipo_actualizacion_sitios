@@ -2,6 +2,7 @@ import sys
 import os
 import subprocess
 import logging
+import time
 from typing import Dict, Any
 
 # Añadir la ruta del proyecto al sys.path
@@ -136,98 +137,76 @@ class DeploymentExecutor:
                 'success': False,
                 'error': str(e)
             }
-
-    def _manage_tomcat_operations(self, site_config: Dict) -> bool:
-        try:
-            # Rutas de Tomcat
-            tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
-            webapps_dir = os.path.join(tomcat_home, 'webapps')
-            
-            # Nombres de archivos
-            war_name = site_config.get('war.name', '')
-            context_path = site_config.get('context.path', '')
-            
-            # Detener Tomcat
-            self._stop_tomcat(tomcat_home)
-            
-            # Backup del WAR actual si existe
-            war_path = os.path.join(webapps_dir, f"{war_name}.war")
-            if os.path.exists(war_path):
-                self._backup_war(war_path)
-                
-            # Copiar nuevo WAR
-            self._deploy_war(site_config, webapps_dir)
-            
-            # Iniciar Tomcat
-            self._start_tomcat(tomcat_home)
-            
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
-            return False
         
     def _stop_tomcat(self, tomcat_home):
         """
         Detener el servicio de Tomcat
         """
         try:
-            # Intentar detener Tomcat de múltiples formas
-            stop_methods = [
-                # Método 1: Usar shutdown.bat
-                [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
-                
-                # Método 2: Usar taskkill con nombre del proceso
-                ['taskkill', '/F', '/IM', 'catalina.exe'],
-                
-                # Método 3: Usar taskkill con filtro de imagen
-                ['taskkill', '/F', '/FI', f'"IMAGEPATH={tomcat_home}*"']
-            ]
-
-            for method in stop_methods:
-                try:
-                    result = subprocess.run(method, capture_output=True, text=True, shell=True)
-                    
-                    # Si el comando se ejecuta sin error o el proceso no existe
-                    if result.returncode == 0 or 'No tasks with specified criteria found.' in result.stderr:
-                        self.logger.info(f"Método de detención exitoso: {method}")
-                        return
-                except Exception as e:
-                    self.logger.warning(f"Método de detención fallido: {method}")
+            # Ruta completa al script de shutdown
+            shutdown_script = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
             
-            # Si ningún método funciona
-            raise Exception("No se pudo detener Tomcat por ningún método")
-        
+            self.logger.info(f"Intentando detener Tomcat usando: {shutdown_script}")
+            
+            # Ejecutar script de shutdown
+            result = subprocess.run(
+                shutdown_script, 
+                capture_output=True, 
+                text=True, 
+                shell=True,
+                cwd=tomcat_home  # Establecer directorio de trabajo
+            )
+            
+            # Verificar resultado
+            if result.returncode == 0:
+                self.logger.info("Tomcat detenido exitosamente")
+            else:
+                # Log del error si no se pudo detener
+                self.logger.error(f"Error al detener Tomcat: {result.stderr}")
+                
+            # Esperar un momento para asegurar detención
+            time.sleep(5)
+            
+            return True
+
         except Exception as e:
-            self.logger.error(f"Error al detener Tomcat: {str(e)}")
-            raise
+            self.logger.error(f"Excepción al detener Tomcat: {str(e)}")
+            return False
 
     def _start_tomcat(self, tomcat_home):
         """
         Iniciar el servicio de Tomcat
         """
         try:
-            # Rutas de inicio de Tomcat
-            startup_scripts = [
-                os.path.join(tomcat_home, 'bin', 'startup.bat'),
-                os.path.join(tomcat_home, 'bin', 'catalina.bat start')
-            ]
-
-            for script in startup_scripts:
-                try:
-                    result = subprocess.run(script, capture_output=True, text=True, shell=True)
-                    
-                    if result.returncode == 0:
-                        self.logger.info(f"Tomcat iniciado exitosamente con: {script}")
-                        return
-                except Exception as e:
-                    self.logger.warning(f"Método de inicio fallido: {script}")
+            # Ruta completa al script de startup
+            startup_script = os.path.join(tomcat_home, 'bin', 'startup.bat')
             
-            raise Exception("No se pudo iniciar Tomcat por ningún método")
-        
+            self.logger.info(f"Intentando iniciar Tomcat usando: {startup_script}")
+            
+            # Ejecutar script de startup
+            result = subprocess.run(
+                startup_script, 
+                capture_output=True, 
+                text=True, 
+                shell=True,
+                cwd=tomcat_home  # Establecer directorio de trabajo
+            )
+            
+            # Verificar resultado
+            if result.returncode == 0:
+                self.logger.info("Tomcat iniciado exitosamente")
+            else:
+                # Log del error si no se pudo iniciar
+                self.logger.error(f"Error al iniciar Tomcat: {result.stderr}")
+            
+            # Esperar un momento para asegurar inicio
+            time.sleep(10)
+            
+            return True
+
         except Exception as e:
-            self.logger.error(f"Error al iniciar Tomcat: {str(e)}")
-            raise
+            self.logger.error(f"Excepción al iniciar Tomcat: {str(e)}")
+            return False
 
     def _backup_war(self, war_path):
         """
