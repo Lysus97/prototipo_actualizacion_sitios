@@ -173,10 +173,10 @@ class DeploymentExecutor:
                     raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
                 
                 # Después de verificar pom.xml
-                maven_home = os.path.join('C:', 'Program Files', 'Apache Software Foundation', 'apache-maven-3.9.8')
+                maven_home = r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8'
                 maven_cmd = 'mvn clean package -DskipTests=true'
                 if os.name == 'nt':  # Windows
-                    maven_cmd = f'"{maven_home}\\bin\\mvn.cmd" clean package -DskipTests=true'
+                    maven_cmd = f'"{os.path.join(maven_home, "bin", "mvn.cmd")}" clean package -DskipTests=true'
                 
                 # 3. Ejecutar Maven con todas las variables de entorno necesarias
                 maven_env = dict(os.environ)
