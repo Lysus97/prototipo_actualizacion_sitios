@@ -262,59 +262,33 @@ class DeploymentExecutor:
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                cmd = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
-                subprocess.run(cmd, shell=True, timeout=30)
+                subprocess.run(['sc', 'stop', 'Tomcat9'], check=True)
                 time.sleep(5)
-                return True
-
             elif action == 'start':
-                # Construir la ruta al script catalina
-                catalina_bat = os.path.join(tomcat_home, 'bin', 'catalina.bat')
+                subprocess.run(['sc', 'start', 'Tomcat9'], check=True)
                 
-                # Asegurarnos de que la ruta existe
-                if not os.path.exists(catalina_bat):
-                    self.logger.error(f"No se encuentra el archivo: {catalina_bat}")
-                    return False
-
-                # Construir el comando completo
-                cmd = ['cmd', '/c', 'start', '/B', catalina_bat, 'start']
+            # Verificar estado
+            max_attempts = 12
+            for attempt in range(max_attempts):
+                time.sleep(5)
+                if self._check_tomcat_status():
+                    return True
+                    
+            return False
                 
-                self.logger.info(f"Ejecutando comando: {' '.join(cmd)}")
-                
-                # Configurar el proceso
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                
-                # Ejecutar el proceso
-                process = subprocess.Popen(
-                    cmd,
-                    startupinfo=startupinfo,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                    cwd=os.path.join(tomcat_home, 'bin'),
-                    env=os.environ.copy()
-                )
-                
-                # Verificar que Tomcat esté respondiendo
-                max_attempts = 12
-                for attempt in range(max_attempts):
-                    time.sleep(5)
-                    try:
-                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                            s.settimeout(1)
-                            result = s.connect_ex(('localhost', 8080))
-                            if result == 0:
-                                self.logger.info("Tomcat está respondiendo en puerto 8080")
-                                return True
-                    except Exception as e:
-                        self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
-
-                self.logger.error("Tomcat no respondió después de 60 segundos")
-                return False
-
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
-            self.logger.exception("Stacktrace completo:")
             return False
+
+    def _check_tomcat_status(self):
+        try:
+            result = subprocess.run(['sc', 'query', 'Tomcat9'], 
+                                capture_output=True, 
+                                text=True)
+            return "RUNNING" in result.stdout
+        except Exception:
+            return False
+        
     def _deploy_war(self, site_config, webapps_dir):
         """
         Desplegar nuevo archivo WAR
