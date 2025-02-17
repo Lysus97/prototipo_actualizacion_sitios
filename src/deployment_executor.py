@@ -261,38 +261,48 @@ class DeploymentExecutor:
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                # Detener Tomcat
                 cmd = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
                 subprocess.run(cmd, shell=True, timeout=30)
                 time.sleep(5)  # Esperar a que se detenga
                 return True
 
             elif action == 'start':
-                # Iniciar Tomcat usando 'start' para no bloquear
-                cmd = f'start /B "" "{os.path.join(tomcat_home, "bin", "startup.bat")}"'
-                subprocess.run(cmd, shell=True, timeout=30)
+                # Usar 'call' en lugar de 'start /B' para asegurar que el proceso sobreviva
+                startup_bat = os.path.join(tomcat_home, 'bin', 'startup.bat')
+                cmd = f'call "{startup_bat}"'
                 
-                # Verificar que Tomcat inició correctamente (máximo 30 segundos)
-                max_attempts = 6
+                # Ejecutar startup.bat
+                process = subprocess.run(
+                    cmd,
+                    shell=True,
+                    timeout=30,
+                    capture_output=True,
+                    text=True
+                )
+                
+                # Loguear la salida para debugging
+                self.logger.info(f"Salida de startup.bat: {process.stdout}")
+                if process.stderr:
+                    self.logger.warning(f"Errores de startup.bat: {process.stderr}")
+                
+                # Esperar y verificar que Tomcat realmente está corriendo
+                max_attempts = 12  # 60 segundos total
                 for attempt in range(max_attempts):
+                    time.sleep(5)
+                    # Intentar conectar al puerto HTTP de Tomcat (8080 por defecto)
                     try:
-                        time.sleep(5)  # Esperar 5 segundos entre intentos
-                        # Verificar si el proceso está corriendo
-                        result = subprocess.run(
-                            ['tasklist', '/FI', 'IMAGENAME eq java.exe'],
-                            capture_output=True,
-                            text=True
-                        )
-                        if 'java.exe' in result.stdout:
-                            self.logger.info("Tomcat iniciado correctamente")
-                            return True
-                        else:
-                            self.logger.info(f"Esperando a Tomcat... intento {attempt + 1}/{max_attempts}")
+                        import socket
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                            s.settimeout(1)
+                            result = s.connect_ex(('localhost', 8080))
+                            if result == 0:
+                                self.logger.info("Tomcat está respondiendo en puerto 8080")
+                                return True
                     except Exception as e:
-                        self.logger.warning(f"Error verificando Tomcat: {e}")
-                        
-                self.logger.warning("No se pudo verificar inicio de Tomcat, pero continuando...")
-                return True
+                        self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
+
+                self.logger.error("Tomcat no respondió después de 60 segundos")
+                return False
 
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
