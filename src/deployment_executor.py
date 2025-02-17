@@ -241,36 +241,35 @@ class DeploymentExecutor:
             # Obtener nombre del WAR de la configuración
             war_name = site_config.get('war.name', '')
             
+            # Imprimir información de depuración
+            self.logger.info(f"Buscando WAR para: {war_name}")
+            self.logger.info(f"Directorio de trabajo actual: {os.getcwd()}")
+            
             # Rutas potenciales para encontrar el WAR
             possible_paths = [
                 os.path.join(os.getcwd(), 'target', f"{war_name}.war"),
                 os.path.join(os.getcwd(), 'build', f"{war_name}.war"),
-                os.path.join(os.getcwd(), f"{war_name}.war")
+                os.path.join(os.getcwd(), f"{war_name}.war"),
+                os.path.join(os.path.dirname(os.getcwd()), 'target', f"{war_name}.war"),
+                os.path.join(os.path.dirname(os.getcwd()), 'build', f"{war_name}.war")
             ]
             
-            # Buscar el WAR en las rutas definidas
-            source_war = None
+            # Buscar y loguear todas las rutas
             for path in possible_paths:
+                self.logger.info(f"Verificando ruta: {path}")
                 if os.path.exists(path):
+                    self.logger.info(f"WAR encontrado en: {path}")
                     source_war = path
                     break
-            
-            # Si no se encuentra el WAR
-            if not source_war:
+            else:
+                # Si no se encuentra el WAR, listar contenido de directorios
+                self.logger.error("Contenido del directorio actual:")
+                for item in os.listdir(os.getcwd()):
+                    self.logger.error(f"- {item}")
+                
                 raise FileNotFoundError(f"No se encontró el archivo WAR para {war_name}")
             
-            # Ruta de destino en webapps
-            destination_war = os.path.join(webapps_dir, f"{war_name}.war")
-            
-            # Importar shutil para copiar archivos
-            import shutil
-            
-            # Copiar WAR
-            shutil.copy2(source_war, destination_war)
-            
-            self.logger.info(f"WAR desplegado exitosamente: {destination_war}")
-            return True
-        
+            # Resto del código de despliegue...
         except Exception as e:
             self.logger.error(f"Error al desplegar WAR: {str(e)}")
             raise
