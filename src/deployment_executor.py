@@ -2,7 +2,6 @@ import sys
 import os
 import subprocess
 import logging
-import time
 from typing import Dict, Any
 
 # Añadir la ruta del proyecto al sys.path
@@ -137,110 +136,71 @@ class DeploymentExecutor:
                 'success': False,
                 'error': str(e)
             }
-        
-    def _stop_tomcat(self, tomcat_home):
+
+    def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         """
-        Detener el servicio de Tomcat
+        Gestiona todas las operaciones de Tomcat de manera centralizada
         """
         try:
-            # Ruta completa al script de shutdown
-            shutdown_script = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
+            # Rutas de Tomcat
+            tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
+            webapps_dir = os.path.join(tomcat_home, 'webapps')
             
-            self.logger.info(f"Intentando detener Tomcat usando: {shutdown_script}")
-            
-            # Ejecutar script de shutdown
-            result = subprocess.run(
-                shutdown_script, 
-                capture_output=True, 
-                text=True, 
-                shell=True,
-                cwd=tomcat_home  # Establecer directorio de trabajo
-            )
-            
-            # Verificar resultado
-            if result.returncode == 0:
-                self.logger.info("Tomcat detenido exitosamente")
-            else:
-                # Log del error si no se pudo detener
-                self.logger.error(f"Error al detener Tomcat: {result.stderr}")
-                
-            # Esperar un momento para asegurar detención
-            time.sleep(5)
-            
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Excepción al detener Tomcat: {str(e)}")
-            return False
-
-    def _start_tomcat(self, tomcat_home):
-        """
-        Iniciar el servicio de Tomcat
-        """
-        try:
-            # Ruta completa al script de startup
-            startup_script = os.path.join(tomcat_home, 'bin', 'startup.bat')
-            
-            self.logger.info(f"Intentando iniciar Tomcat usando: {startup_script}")
-            
-            # Ejecutar script de startup
-            result = subprocess.run(
-                startup_script, 
-                capture_output=True, 
-                text=True, 
-                shell=True,
-                cwd=tomcat_home  # Establecer directorio de trabajo
-            )
-            
-            # Verificar resultado
-            if result.returncode == 0:
-                self.logger.info("Tomcat iniciado exitosamente")
-            else:
-                # Log del error si no se pudo iniciar
-                self.logger.error(f"Error al iniciar Tomcat: {result.stderr}")
-            
-            # Esperar un momento para asegurar inicio
-            time.sleep(10)
-            
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Excepción al iniciar Tomcat: {str(e)}")
-            return False
-
-    def _backup_war(self, war_path):
-        """
-        Crear backup del archivo WAR existente
-        """
-        try:
-            backup_path = f"{war_path}.bak"
-            import shutil
-            shutil.copy2(war_path, backup_path)
-            self.logger.info(f"Backup de WAR creado en: {backup_path}")
-        except Exception as e:
-            self.logger.error(f"Error al crear backup de WAR: {str(e)}")
-            raise
-
-    def _deploy_war(self, site_config, webapps_dir):
-        """
-        Desplegar nuevo archivo WAR
-        """
-        try:
+            # Obtener configuraciones
             war_name = site_config.get('war.name', '')
-            # Suponiendo que tienes el WAR en un directorio específico
-            source_war = os.path.join(os.getcwd(), 'target', f"{war_name}.war")
+            war_path = os.path.join(webapps_dir, f"{war_name}.war")
+
+            # Detener Tomcat
+            self._execute_tomcat_command('stop', tomcat_home)
             
-            if not os.path.exists(source_war):
-                raise FileNotFoundError(f"Archivo WAR no encontrado: {source_war}")
+            # Backup de WAR existente
+            if os.path.exists(war_path):
+                self._backup_war(war_path)
             
-            # Copiar WAR a directorio de webapps
-            destination_war = os.path.join(webapps_dir, f"{war_name}.war")
-            import shutil
-            shutil.copy2(source_war, destination_war)
+            # Desplegar nuevo WAR
+            self._deploy_war(site_config, webapps_dir)
             
-            self.logger.info(f"WAR desplegado: {destination_war}")
+            # Iniciar Tomcat
+            self._execute_tomcat_command('start', tomcat_home)
+            
+            return True
+        
         except Exception as e:
-            self.logger.error(f"Error al desplegar WAR: {str(e)}")
+            self.logger.error(f"Error en operaciones Tomcat: {str(e)}")
+            return False
+
+    def _execute_tomcat_command(self, action: str, tomcat_home: str):
+        """
+        Método unificado para ejecutar comandos de Tomcat
+        """
+        try:
+            if action == 'stop':
+                scripts = [
+                    os.path.join(tomcat_home, 'bin', 'shutdown.bat'),
+                    'net stop "Apache Tomcat 9.0 Tomcat9"'
+                ]
+            elif action == 'start':
+                scripts = [
+                    os.path.join(tomcat_home, 'bin', 'startup.bat'),
+                    'net start "Apache Tomcat 9.0 Tomcat9"'
+                ]
+            else:
+                raise ValueError(f"Acción no válida: {action}")
+
+            for script in scripts:
+                try:
+                    result = subprocess.run(script, capture_output=True, text=True, shell=True)
+                    
+                    if result.returncode == 0:
+                        self.logger.info(f"Comando {action} de Tomcat ejecutado: {script}")
+                        return
+                except Exception as e:
+                    self.logger.warning(f"Método de {action} fallido: {script}")
+            
+            raise Exception(f"No se pudo {action} Tomcat por ningún método")
+        
+        except Exception as e:
+            self.logger.error(f"Error al {action} Tomcat: {str(e)}")
             raise
 
 def main():
