@@ -280,15 +280,35 @@ class DeploymentExecutor:
                         capture_output=True, 
                         text=True, 
                         shell=True,
-                        timeout=30  # Añadir timeout para evitar bloqueos
+                        timeout=30
                     )
                     
-                    # Condiciones de éxito
                     if result.returncode == 0:
                         self.logger.info(f"Comando {action} de Tomcat ejecutado exitosamente")
-                        return
+                        
+                        # Si es start, verificar que Tomcat esté realmente funcionando
+                        if action == 'start':
+                            self.logger.info("Esperando a que Tomcat esté completamente iniciado...")
+                            import time
+                            import urllib.request
+                            
+                            # Intentar hasta 12 veces (1 minuto total)
+                            for attempt in range(12):
+                                try:
+                                    response = urllib.request.urlopen('http://localhost:8080')
+                                    if response.status == 200:
+                                        self.logger.info("Tomcat iniciado y respondiendo correctamente")
+                                        return True
+                                except Exception as e:
+                                    if attempt < 11:  # En el último intento no logueamos espera
+                                        self.logger.info(f"Esperando a Tomcat... intento {attempt + 1}/12")
+                                        time.sleep(5)  # Esperar 5 segundos entre intentos
+                            
+                            self.logger.error("Tomcat no respondió después de 1 minuto")
+                            raise Exception("Timeout esperando respuesta de Tomcat")
+                        
+                        return True
                     
-                    # Log de salida en caso de fallo
                     self.logger.warning(f"Comando fallido. Código: {result.returncode}")
                     self.logger.warning(f"STDOUT: {result.stdout}")
                     self.logger.warning(f"STDERR: {result.stderr}")
@@ -298,12 +318,11 @@ class DeploymentExecutor:
                 except Exception as cmd_error:
                     self.logger.warning(f"Error con comando {cmd}: {str(cmd_error)}")
 
-            # Si ningún método funciona
             raise Exception(f"No se pudo {action} Tomcat por ningún método")
-        
+            
         except Exception as e:
             self.logger.error(f"Error crítico al {action} Tomcat: {str(e)}")
-            raise
+            return False
 
     def _deploy_war(self, site_config, webapps_dir):
         """
