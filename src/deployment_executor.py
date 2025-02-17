@@ -142,88 +142,112 @@ class DeploymentExecutor:
 
     def _manage_tomcat_operations(self, site_config: Dict) -> bool:
         try:
-            # Nombre del proyecto
+            # Loguear toda la configuración para depuración
+            self.logger.info("Configuración completa recibida:")
+            for key, value in site_config.items():
+                self.logger.info(f"{key}: {value}")
+
+            # Nombre del proyecto - IMPORTANTE: usar el prefijo correcto
             project_name = site_config.get('upd.environment1.war.name', '')
             
+            self.logger.info(f"Nombre del proyecto extraído: '{project_name}'")
+            
+            if not project_name:
+                raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
+            
             # Rutas de Tomcat
-            tomcat_home = os.path.join('C:\\', 'Program Files', 'Apache Software Foundation', 'Tomcat 9.0')
+            tomcat_home = r'C:\Program Files\Apache Software Foundation\Tomcat 9.0'
             webapps_dir = os.path.join(tomcat_home, 'webapps')
             
-            # Verificar estado de Tomcat
-            def is_tomcat_running():
-                try:
-                    result = subprocess.run(
-                        ['tasklist', '/FI', 'IMAGENAME eq java.exe'],
-                        capture_output=True, 
-                        text=True, 
-                        shell=True
-                    )
-                    return 'tomcat' in result.stdout.lower()
-                except Exception:
-                    return False
             # Usar SVNManager para checkout
             svn_manager = SVNManager(logger=self.logger)
             
             try:
                 # 1. Hacer checkout del proyecto
                 project_path = svn_manager.checkout_project(project_name)
+                self.logger.info(f"Checkout completado en: {project_path}")
                 
-                # 2. Buscar WAR generado
-                target_dir = os.path.join(project_path, 'target')
-                wars = [
-                    f for f in os.listdir(target_dir) 
-                    if f.endswith('.war') and 
-                    not f.endswith('.original') and 
-                    f.startswith(project_name)
-                ]
+                # 2. Verificar pom.xml
+                pom_path = os.path.join(project_path, 'pom.xml')
+                if not os.path.exists(pom_path):
+                    raise FileNotFoundError(f"No se encontró pom.xml en {project_path}")
+                
+                # Después de verificar pom.xml
+                maven_cmd = 'mvn clean package -DskipTests=true'
+                if os.name == 'nt':  # Windows
+                    maven_cmd = '{}\\bin\\mvn.cmd clean package -DskipTests=true'.format(
+                        r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8'
+                    )
+                
+                # 3. Ejecutar Maven con todas las variables de entorno necesarias
+                maven_env = dict(os.environ)
+                maven_env.update({
+                    'JAVA_HOME': r'C:\Program Files\Java\jdk-17',
+                    'M2_HOME': r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8',
+                    'PATH': f"{maven_env.get('PATH', '')};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin"
+                })
 
-                if not wars:
-                    self.logger.error(f"No se encontraron WARs en: {target_dir}")
+                # Configurar entorno para Maven
+                maven_env = os.environ.copy()
+                maven_env.update({
+                    'JAVA_HOME': r'C:\Program Files\Java\jdk-17',
+                    'M2_HOME': r'C:\Program Files\Apache Software Foundation\apache-maven-3.9.8',
+                    'PATH': r"{};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin".format(
+                        maven_env.get('PATH', '')
+                    )
+                })
+                
+                self.logger.info("Iniciando build con Maven...")
+                build_result = subprocess.run(
+                    maven_cmd,
+                    cwd=project_path,
+                    env=maven_env,
+                    shell=True,
+                    capture_output=True,
+                    text=True
+                )
+                
+                # Log detallado de la compilación
+                self.logger.info(f"Build Maven - Código de retorno: {build_result.returncode}")
+                self.logger.info(f"Build Maven - STDOUT:\n{build_result.stdout}")
+                
+                if build_result.returncode != 0:
+                    self.logger.error(f"Error en build Maven:\n{build_result.stderr}")
                     return False
-
-                war_path = os.path.join(target_dir, wars[0])
-                destination_war = os.path.join(webapps_dir, f"{project_name}.war")
                 
-                # 3. Preparar despliegue
-                # Intentar detener Tomcat solo si está corriendo
-                if is_tomcat_running():
-                    self.logger.info("Tomcat está corriendo. Intentando detener...")
-                    stop_result = self._execute_tomcat_command('stop', tomcat_home)
-                    if not stop_result:
-                        self.logger.warning("No se pudo detener Tomcat completamente")
-                
-                # 4. Gestionar backup y despliegue de WAR
-                def remove_existing_war():
-                    try:
-                        if os.path.exists(destination_war):
-                            # Intentar eliminar el WAR existente
-                            os.remove(destination_war)
-                            # También eliminar el directorio descomprimido si existe
-                            webapp_dir = destination_war.replace('.war', '')
-                            if os.path.exists(webapp_dir):
-                                shutil.rmtree(webapp_dir)
-                    except Exception as e:
-                        self.logger.error(f"Error al eliminar WAR existente: {e}")
+                # 4. Buscar el WAR generado en la carpeta target
+                war_path = os.path.join(project_path, 'target', f"{project_name}-0.0.1-SNAPSHOT.war")
+                if not os.path.exists(war_path):
+                    # Intentar encontrar cualquier WAR en el directorio target
+                    target_dir = os.path.join(project_path, 'target')
+                    self.logger.info(f"Buscando WARs en: {target_dir}")
+                    wars = [f for f in os.listdir(target_dir) if f.endswith('.war') and not f.endswith('.original')]
+                    
+                    if wars:
+                        war_path = os.path.join(target_dir, wars[0])
+                        self.logger.info(f"WAR encontrado: {war_path}")
+                    else:
+                        self.logger.error(f"No se encontraron WARs en: {target_dir}")
                         return False
-                    return True
-
-                # Intentar eliminar WAR existente
-                if not remove_existing_war():
-                    self.logger.error("No se pudo eliminar WAR existente")
-                    return False
                 
-                # 5. Copiar nuevo WAR
-                try:
-                    shutil.copy2(war_path, destination_war)
-                    self.logger.info(f"WAR desplegado en: {destination_war}")
-                except Exception as copy_error:
-                    self.logger.error(f"Error al copiar WAR: {copy_error}")
-                    return False
+                # 5. Preparar el despliegue en Tomcat
+                destination_war = os.path.join(webapps_dir, f"{project_name}.war")  # Simplificamos el nombre para Tomcat
                 
-                # 6. Iniciar Tomcat
-                start_result = self._execute_tomcat_command('start', tomcat_home)
-                if not start_result:
-                    self.logger.warning("No se pudo iniciar Tomcat completamente")
+                # 6. Hacer backup si existe
+                if os.path.exists(destination_war):
+                    backup_path = f"{destination_war}.{datetime.now().strftime('%Y%m%d_%H%M%S')}.bak"
+                    shutil.copy2(destination_war, backup_path)
+                    self.logger.info(f"Backup creado en: {backup_path}")
+                
+                # 7. Detener Tomcat
+                self._execute_tomcat_command('stop', tomcat_home)
+                
+                # 8. Copiar nuevo WAR
+                shutil.copy2(war_path, destination_war)
+                self.logger.info(f"WAR desplegado en: {destination_war}")
+                
+                # 9. Iniciar Tomcat
+                self._execute_tomcat_command('start', tomcat_home)
                 
                 return True
                 
@@ -234,81 +258,36 @@ class DeploymentExecutor:
         except Exception as e:
             self.logger.error(f"Error general en operaciones Tomcat: {str(e)}")
             return False
+        
     def _execute_tomcat_command(self, action: str, tomcat_home: str):
         try:
             if action == 'stop':
-                # Intentar detener de múltiples formas
-                stop_methods = [
-                    [os.path.join(tomcat_home, 'bin', 'shutdown.bat')],
-                    ['taskkill', '/F', '/IM', 'java.exe', '/FI', 'WINDOWTITLE eq Apache Tomcat'],
-                    ['net', 'stop', '"Apache Tomcat 9.0 Tomcat9"']
-                ]
-
-                for method in stop_methods:
+                # Primero intentar detener gracefully
+                shutdown_cmd = [os.path.join(tomcat_home, 'bin', 'shutdown.bat')]
+                
+                # Si falla, matar el proceso por puerto
+                kill_cmd = ['taskkill', '/F', '/IM', 'java.exe']
+                
+                for cmd in [shutdown_cmd, kill_cmd]:
                     try:
-                        self.logger.info(f"Intentando detener Tomcat con: {' '.join(method)}")
-                        result = subprocess.run(
-                            method, 
-                            capture_output=True, 
-                            text=True,
-                            shell=True,
-                            timeout=30
-                        )
+                        self.logger.info(f"Intentando {action} Tomcat con: {' '.join(cmd)}")
+                        subprocess.run(cmd, shell=True, timeout=30)
+                        time.sleep(5)  # Dar tiempo a que se detenga
+                    except:
+                        continue
                         
-                        # Condiciones de éxito más flexibles
-                        if result.returncode == 0:
-                            self.logger.info(f"Método de detención exitoso: {' '.join(method)}")
-                            time.sleep(5)  # Dar tiempo para detener
-                            return True
-                        
-                        # Log de salida en caso de fallo
-                        self.logger.warning(f"Método fallido. Código: {result.returncode}")
-                        self.logger.warning(f"STDOUT: {result.stdout}")
-                        self.logger.warning(f"STDERR: {result.stderr}")
-
-                    except subprocess.TimeoutExpired:
-                        self.logger.warning(f"Timeout en método: {method}")
-                    except Exception as cmd_error:
-                        self.logger.warning(f"Error con método: {cmd_error}")
-
-                # Si ningún método funciona
-                self.logger.error("No se pudo detener Tomcat por ningún método")
-                return False
-                    
+                return True
+                
             elif action == 'start':
-                startup_scripts = [
-                    os.path.join(tomcat_home, 'bin', 'startup.bat'),
-                    'net start "Apache Tomcat 9.0 Tomcat9"'
-                ]
-
-                for script in startup_scripts:
-                    try:
-                        self.logger.info(f"Intentando iniciar Tomcat con: {script}")
-                        result = subprocess.run(
-                            script, 
-                            capture_output=True, 
-                            text=True, 
-                            shell=True,
-                            timeout=30
-                        )
-                        
-                        if result.returncode == 0:
-                            self.logger.info(f"Iniciado exitosamente con: {script}")
-                            time.sleep(10)  # Dar tiempo para iniciar
-                            return True
-                        
-                        self.logger.warning(f"Método de inicio fallido: {script}")
-                    except subprocess.TimeoutExpired:
-                        self.logger.warning(f"Timeout al iniciar: {script}")
-                    except Exception as start_error:
-                        self.logger.warning(f"Error al iniciar: {start_error}")
-
-                self.logger.error("No se pudo iniciar Tomcat")
-                return False
-                    
+                startup_cmd = os.path.join(tomcat_home, 'bin', 'startup.bat')
+                subprocess.run(startup_cmd, shell=True)
+                time.sleep(10)  # Dar tiempo a que inicie
+                return True
+                
         except Exception as e:
             self.logger.error(f"Error en {action} Tomcat: {str(e)}")
             return False
+
     def _deploy_war(self, site_config, webapps_dir):
         """
         Desplegar nuevo archivo WAR
