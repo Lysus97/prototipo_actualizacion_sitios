@@ -3,6 +3,7 @@ import os
 import subprocess
 import logging
 import shutil
+import time
 from datetime import datetime
 from typing import Dict, Any
 
@@ -155,7 +156,7 @@ class DeploymentExecutor:
                 raise ValueError("No se pudo extraer el nombre del proyecto. Verifica la configuración.")
             
             # Rutas de Tomcat
-            tomcat_home = r'C:\\Program Files\Apache Software Foundation\Tomcat 9.0'
+            tomcat_home = r'C:\\Program Files\Apache Software Foundation\\Tomcat 9.0'
             webapps_dir = os.path.join(tomcat_home, 'webapps')
             
             # Usar SVNManager para checkout
@@ -175,23 +176,23 @@ class DeploymentExecutor:
                 maven_cmd = 'mvn clean package -DskipTests=true'
                 if os.name == 'nt':  # Windows
                     maven_cmd = '{}\\bin\\mvn.cmd clean package -DskipTests=true'.format(
-                        r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8'
+                        r'C:\Program Files\Apache Software Foundation\\apache-maven-3.9.8'
                     )
                 
                 # 3. Ejecutar Maven con todas las variables de entorno necesarias
                 maven_env = dict(os.environ)
                 maven_env.update({
-                    'JAVA_HOME': r'C:\\Program Files\Java\jdk-17',
-                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\apache-maven-3.9.8',
+                    'JAVA_HOME': r'C:\\Program Files\\Java\\jdk-17',
+                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8',
                     'PATH': f"{maven_env.get('PATH', '')};C:\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin"
                 })
 
                 # Configurar entorno para Maven
                 maven_env = os.environ.copy()
                 maven_env.update({
-                    'JAVA_HOME': r'C:\\Program Files\Java\jdk-17',
-                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\apache-maven-3.9.8',
-                    'PATH': r"{};C:\\Program Files\Apache Software Foundation\apache-maven-3.9.8\bin".format(
+                    'JAVA_HOME': r'C:\\Program Files\\Java\\jdk-17',
+                    'M2_HOME': r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8',
+                    'PATH': r"{};C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8\bin".format(
                         maven_env.get('PATH', '')
                     )
                 })
