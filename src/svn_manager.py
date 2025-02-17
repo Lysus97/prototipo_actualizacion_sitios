@@ -119,3 +119,70 @@ class SVNManager:
         except Exception as e:
             self.logger.error(f"Error al crear tag en SVN: {str(e)}")
             return False
+        
+    def checkout_and_build_project(self, project_name):
+        """
+        Hacer checkout de un proyecto de SVN y compilarlo
+        """
+        try:
+            # Ruta base del repositorio SVN
+            repo_base_url = "https://localhost/svn/test_repo/branches/SVE_5_7_1_mhcp"
+            project_url = f"{repo_base_url}/{project_name}"
+            
+            # Directorio local para checkout
+            local_path = os.path.join(os.getcwd(), 'projects', project_name)
+            
+            # Crear directorio si no existe
+            os.makedirs(local_path, exist_ok=True)
+            
+            # Comando de checkout de SVN
+            checkout_cmd = [
+                'svn', 'checkout',
+                project_url,
+                local_path,
+                '--username', self.credentials['username'],
+                '--password', self.credentials['password']
+            ]
+            
+            # Ejecutar checkout
+            checkout_result = subprocess.run(checkout_cmd, capture_output=True, text=True)
+            
+            if checkout_result.returncode != 0:
+                raise Exception(f"Error en checkout: {checkout_result.stderr}")
+            
+            # Compilar con Maven
+            build_cmd = [
+                'mvn', 'clean', 'package', 
+                '-DskipTests=true'  # Opcional: saltar tests
+            ]
+            
+            # Ejecutar desde el directorio del proyecto
+            build_result = subprocess.run(
+                build_cmd, 
+                cwd=local_path, 
+                capture_output=True, 
+                text=True
+            )
+            
+            if build_result.returncode != 0:
+                raise Exception(f"Error en compilación: {build_result.stderr}")
+            
+            # Buscar el WAR generado
+            war_path = self._find_war_file(local_path)
+            
+            return war_path
+        
+        except Exception as e:
+            self.logger.error(f"Error al compilar proyecto {project_name}: {str(e)}")
+            raise
+
+    def _find_war_file(self, base_path):
+        """
+        Encontrar archivo WAR en un directorio
+        """
+        for root, dirs, files in os.walk(base_path):
+            for file in files:
+                if file.endswith('.war'):
+                    return os.path.join(root, file)
+        
+        raise FileNotFoundError("No se encontró archivo WAR")
