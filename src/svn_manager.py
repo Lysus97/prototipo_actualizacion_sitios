@@ -73,19 +73,30 @@ class SVNManager:
 
     def create_release_tag(self, site_config: Dict) -> bool:
         try:
-            version_to = site_config.get('prefix', "SVE_10_0_39")
+            # Extraer la versión base y el último número
+            base_version = "SVE_10_0_"
             
-            self.logger.info(f"Creando tag: {version_to}")
+            # Obtener el último número de versión (por defecto comenzar en 39)
+            try:
+                with open('last_tag_version.txt', 'r') as f:
+                    last_version = int(f.read().strip())
+            except (FileNotFoundError, ValueError):
+                last_version = 39
+            
+            # Incrementar el número de versión
+            new_version = last_version + 2
+            full_version = f"{base_version}{new_version}"
+            
+            self.logger.info(f"Creando tag: {full_version}")
 
             source_url = f"{self.svn_url}/branches/SVE_5_7_1_mhcp"
-            target_url = f"{self.svn_url}/tags/{version_to}"
+            target_url = f"{self.svn_url}/tags/{full_version}"
 
-            # Eliminar la opción --force
             cmd = [
                 'svn', 'copy',
                 source_url,
                 target_url,
-                '-m', f"Creating release tag {version_to}",
+                '-m', f"Creating release tag {full_version}",
                 '--username', self.credentials['username'],
                 '--password', self.credentials['password'],
                 '--non-interactive',
@@ -98,7 +109,11 @@ class SVNManager:
                 self.logger.error(f"Error al crear tag: {result.stderr}")
                 return False
             
-            self.logger.info(f"Tag creado exitosamente: {version_to}")
+            # Guardar el nuevo número de versión
+            with open('last_tag_version.txt', 'w') as f:
+                f.write(str(new_version))
+            
+            self.logger.info(f"Tag creado exitosamente: {full_version}")
             return True
 
         except Exception as e:

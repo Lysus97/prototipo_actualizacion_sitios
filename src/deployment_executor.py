@@ -172,11 +172,15 @@ class DeploymentExecutor:
         Detener el servicio de Tomcat
         """
         try:
-            # Comando para detener Tomcat
+            # Usar taskkill para forzar la detención
             cmd = [
-                os.path.join(tomcat_home, 'bin', 'shutdown.bat')
+                'taskkill', '/F', '/IM', 'java.exe', '/FI', f'"IMAGEPATH={tomcat_home}*"'
             ]
-            subprocess.run(cmd, shell=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            
+            if result.returncode != 0 and 'ERROR: No tasks with specified criteria found.' not in result.stderr:
+                raise Exception(f"Error al detener Tomcat: {result.stderr}")
+            
             self.logger.info("Tomcat detenido exitosamente")
         except Exception as e:
             self.logger.error(f"Error al detener Tomcat: {str(e)}")
@@ -187,11 +191,15 @@ class DeploymentExecutor:
         Iniciar el servicio de Tomcat
         """
         try:
-            # Comando para iniciar Tomcat
+            # Usar startup.bat con verificación
             cmd = [
                 os.path.join(tomcat_home, 'bin', 'startup.bat')
             ]
-            subprocess.run(cmd, shell=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            
+            if result.returncode != 0:
+                raise Exception(f"Error al iniciar Tomcat: {result.stderr}")
+            
             self.logger.info("Tomcat iniciado exitosamente")
         except Exception as e:
             self.logger.error(f"Error al iniciar Tomcat: {str(e)}")
