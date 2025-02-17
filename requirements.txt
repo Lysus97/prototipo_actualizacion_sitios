@@ -1,0 +1,7 @@
+pandas
+openpyxl
+pysvn
+paramiko
+cx_Oracle
+pyodbc
+python-dotenv
