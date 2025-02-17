@@ -176,7 +176,7 @@ class DeploymentExecutor:
                 maven_cmd = 'mvn clean package -DskipTests=true'
                 if os.name == 'nt':  # Windows
                     maven_cmd = '{}\\bin\\mvn.cmd clean package -DskipTests=true'.format(
-                        r'C:\Program Files\Apache Software Foundation\\apache-maven-3.9.8'
+                        r'C:\\Program Files\Apache Software Foundation\\apache-maven-3.9.8'
                     )
                 
                 # 3. Ejecutar Maven con todas las variables de entorno necesarias
