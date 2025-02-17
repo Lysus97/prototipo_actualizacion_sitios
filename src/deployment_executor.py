@@ -1,3 +1,4 @@
+import socket
 import sys
 import os
 import subprocess
@@ -263,35 +264,30 @@ class DeploymentExecutor:
             if action == 'stop':
                 cmd = os.path.join(tomcat_home, 'bin', 'shutdown.bat')
                 subprocess.run(cmd, shell=True, timeout=30)
-                time.sleep(5)  # Esperar a que se detenga
+                time.sleep(5)
                 return True
 
             elif action == 'start':
-                # Usar catalina.bat en lugar de startup.bat
                 catalina_bat = os.path.join(tomcat_home, 'bin', 'catalina.bat')
                 
-                # Crear el proceso de Tomcat desvinculado del proceso padre
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-
-                # Iniciar Tomcat como un proceso independiente
-                process = subprocess.Popen(
-                    f'cmd /c "{catalina_bat}" run',
+                # Usar 'start' para ejecutar en background
+                start_cmd = f'start /B cmd /c "{catalina_bat}" start'
+                
+                # Crear el proceso desvinculado
+                subprocess.Popen(
+                    start_cmd,
                     shell=True,
-                    startupinfo=startupinfo,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+                    creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     stdin=subprocess.PIPE
                 )
                 
-                # Esperar a que Tomcat esté disponible
+                # Verificar que Tomcat esté respondiendo
                 max_attempts = 12
                 for attempt in range(max_attempts):
                     time.sleep(5)
                     try:
-                        import socket
                         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                             s.settimeout(1)
                             result = s.connect_ex(('localhost', 8080))
@@ -301,7 +297,6 @@ class DeploymentExecutor:
                     except Exception as e:
                         self.logger.warning(f"Intento {attempt + 1}: Error verificando Tomcat: {e}")
 
-                self.logger.error("Tomcat no respondió después de 60 segundos")
                 return False
 
         except Exception as e:
